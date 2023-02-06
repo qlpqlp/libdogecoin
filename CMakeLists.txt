@@ -74,6 +74,7 @@ INSTALL(FILES
     include/dogecoin/utils.h
     include/dogecoin/vector.h
     include/dogecoin/wow.h
+    include/dogecoin/moon.h
     DESTINATION include/dogecoin
 )
 
@@ -101,6 +102,7 @@ TARGET_SOURCES(${LIBDOGECOIN_NAME} PRIVATE
     src/tx.c
     src/utils.c
     src/vector.c
+    src/moon.c
 )
 
 FILE(GLOB SECP256K1 RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -159,6 +161,7 @@ IF(USE_TESTS)
         test/unittester.c
         test/utils_tests.c
         test/vector_tests.c
+        test/moon_tests.c
     )
     TARGET_LINK_LIBRARIES(tests ${LIBDOGECOIN_NAME} m)
     ADD_TEST(NAME ${LIBDOGECOIN_NAME}_tests COMMAND tests)
