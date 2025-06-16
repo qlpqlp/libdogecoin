@@ -903,8 +903,8 @@ int main(int argc, const char* argv[])
             printf("Message signed: %s\n", signature);
     } else if (strcmp(cmd, "sign_transaction") == 0) {
         printf("- Sign a transaction\n");
-        char raw_tx[1024];
-        char signed_tx[4096];
+        char raw_tx[TXHEXMAXLEN];
+        char signed_tx[TXHEXMAXLEN];
         size_t signed_tx_len = sizeof(signed_tx);
 
         // Example transaction creation process

@@ -243,7 +243,7 @@ int start_transaction() {
  */
 int save_raw_transaction(int txindex, const char* hexadecimal_transaction) {
     debug_print("raw_hexadecimal_transaction: %s\n", hexadecimal_transaction);
-    if (strlen(hexadecimal_transaction) > 1024*100) { //don't accept tx larger then 100kb
+    if (strlen(hexadecimal_transaction) > TXHEXMAXLEN) { //don't accept tx larger then 100kb
         printf("tx too large (max 100kb)\n");
         return false;
     }
@@ -479,7 +479,7 @@ void clear_transaction(int txindex) {
 int sign_raw_transaction(int inputindex, char* incomingrawtx, char* scripthex, int sighashtype, char* privkey) {
     if(!incomingrawtx || !scripthex) return false;
 
-    if (strlen(incomingrawtx) > 1024*100) { //don't accept tx larger then 100kb
+    if (strlen(incomingrawtx) > TXHEXMAXLEN) { //don't accept tx larger then 100kb
         printf("tx too large (max 100kb)\n");
         return false;
     }
@@ -699,7 +699,7 @@ int sign_transaction_w_privkey(int txindex, int vout_index, char* privkey) {
  * @return The index of the new working transaction if stored successfully, 0 otherwise.
  */
 int store_raw_transaction(char* incomingrawtx) {
-    if (strlen(incomingrawtx) > 1024*100) { //don't accept tx larger then 100kb
+    if (strlen(incomingrawtx) > TXHEXMAXLEN) { //don't accept tx larger then 100kb
         printf("tx too large (max 100kb)\n");
         return false;
     }
