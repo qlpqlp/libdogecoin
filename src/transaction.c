@@ -573,7 +573,16 @@ int sign_raw_transaction(int inputindex, char* incomingrawtx, char* scripthex, i
 
         char* signed_tx_hex = dogecoin_char_vla(signed_tx->len * 2 + 1);
         utils_bin_to_hex((unsigned char *)signed_tx->str, signed_tx->len, signed_tx_hex);
-        memcpy(incomingrawtx, signed_tx_hex, strlen(signed_tx_hex));
+        size_t signed_len = strlen(signed_tx_hex);
+        if (signed_len >= TO_UINT8_HEX_BUF_LEN) {
+            printf("signed tx too large (max 100 kB)\n");
+            cstr_free(signed_tx, true);
+            dogecoin_tx_free(txtmp);
+            free(signed_tx_hex);
+            return false;
+        }
+        strncpy(incomingrawtx, signed_tx_hex, TO_UINT8_HEX_BUF_LEN - 1);
+        incomingrawtx[TO_UINT8_HEX_BUF_LEN - 1] = '\0';
         debug_print("signed TX: %s\n", incomingrawtx);
         cstr_free(signed_tx, true);
         dogecoin_tx_free(txtmp);
