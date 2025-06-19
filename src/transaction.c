@@ -735,3 +735,182 @@ int store_raw_transaction(char* incomingrawtx) {
     dogecoin_tx_free(txtmp);
     return txindex;
 }
+
+/**
+ * @brief This function takes an index of a working transaction and writes
+ * its hex representation into a caller-provided buffer.
+ *
+ * @param txindex   The index of the working transaction.
+ * @param buf       Buffer to receive the hex string.
+ * @param buf_cap   Capacity of buf in bytes.
+ *
+ * @return Number of bytes written on success, or 0 on error.
+ */
+int get_raw_transaction_ex(int txindex, char* buf, size_t buf_cap) {
+    working_transaction* tx = find_transaction(txindex);
+    if (!tx || !buf || buf_cap == 0) return 0;
+
+    // serialize to cstring
+    cstring* serialized = cstr_new_sz(1024);
+    if (!serialized) return 0;
+    dogecoin_tx_serialize(serialized, tx->transaction);
+
+    // hex-encode into provided buffer
+    size_t hex_len = serialized->len * 2;
+    if (hex_len + 1 > buf_cap) {
+        cstr_free(serialized, true);
+        return 0;
+    }
+    utils_bin_to_hex((unsigned char*)serialized->str, serialized->len, buf);
+    cstr_free(serialized, true);
+    return (int)hex_len;
+}
+
+/**
+ * @brief This function signs the specified input of a working transaction.
+ * It supports a two-step pattern:
+ *   1) Call with signedrawtx==NULL to query needed buffer size in *signed_size.
+ *   2) Allocate signedrawtx to at least *signed_size, then call again to fill it.
+ *
+ * @param inputindex    Index of the input within the transaction to sign.
+ * @param incomingrawtx The raw transaction hex to be signed.
+ * @param signedrawtx   Buffer to receive signed hex, or NULL to query size.
+ * @param signed_size   On entry: capacity of signedrawtx; on exit (query mode): required size (including NUL).
+ * @param scripthex     The pubkey script for this input, in hex.
+ * @param sighashtype   SIGHASH type (e.g. 1 for ALL).
+ * @param privkey       WIF-encoded private key.
+ *
+ * @return 1 on success (or size-report), 0 on error.
+ */
+int sign_raw_transaction_ex(int    inputindex,
+                            const char*  incomingrawtx,
+                            char*  signedrawtx,
+                            size_t* signed_size,
+                            const char*  scripthex,
+                            int    sighashtype,
+                            const char*  privkey)
+{
+    if (!incomingrawtx || !scripthex || !signed_size || !privkey) return 0;
+    if (strlen(incomingrawtx) > TO_UINT8_HEX_BUF_LEN) {
+        printf("tx too large (max 100 KB)\n");
+        return 0;
+    }
+
+    // deserialize incomingrawtx
+    dogecoin_tx* txtmp = dogecoin_tx_new();
+    if (!txtmp) return 0;
+    size_t outlen = 0;
+    uint8_t* data = dogecoin_malloc(strlen(incomingrawtx) / 2);
+    if (!data) {
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+    utils_hex_to_bin(incomingrawtx, data, strlen(incomingrawtx), &outlen);
+    if (outlen == 0 || !dogecoin_tx_deserialize(data, outlen, txtmp, NULL)) {
+        dogecoin_free(data);
+        dogecoin_tx_free(txtmp);
+        printf("invalid tx hex\n");
+        return 0;
+    }
+    dogecoin_free(data);
+
+    // bounds-check input index
+    if ((size_t)inputindex >= txtmp->vin->len) {
+        dogecoin_tx_free(txtmp);
+        printf("input index out of range\n");
+        return 0;
+    }
+
+    // build script cstring
+    size_t script_hex_len = strlen(scripthex) / 2;
+    uint8_t* script_data = dogecoin_malloc(script_hex_len);
+    if (!script_data) {
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+    utils_hex_to_bin(scripthex, script_data, strlen(scripthex), &outlen);
+    if (outlen == 0) {
+        dogecoin_free(script_data);
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+    cstring* script = cstr_new_buf(script_data, outlen);
+    dogecoin_free(script_data);
+    if (!script) {
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+
+    // compute sighash
+    uint256_t sighash;
+    dogecoin_mem_zero(sighash, sizeof(sighash));
+    dogecoin_tx_sighash(txtmp, script, inputindex, sighashtype, sighash);
+
+    // decode private key
+    const dogecoin_chainparams* chain = (privkey[0] == 'c')
+        ? &dogecoin_chainparams_test
+        : &dogecoin_chainparams_main;
+    dogecoin_key key;
+    dogecoin_privkey_init(&key);
+    if (!dogecoin_privkey_decode_wif(privkey, chain, &key)) {
+        cstr_free(script, true);
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+
+    // sign
+    uint8_t sigcompact[64] = {0};
+    size_t sigderlen = 75;
+    uint8_t sigder_plus_hashtype[75];
+    enum dogecoin_tx_sign_result res = dogecoin_tx_sign_input(
+        txtmp, script, &key,
+        inputindex, sighashtype,
+        sigcompact, sigder_plus_hashtype, &sigderlen
+    );
+    cstr_free(script, true);
+    if (res != DOGECOIN_SIGN_OK) {
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+
+    // serialize signed tx
+    cstring* signed_tx = cstr_new_sz(1024);
+    if (!signed_tx) {
+        dogecoin_tx_free(txtmp);
+        return 0;
+    }
+    dogecoin_tx_serialize(signed_tx, txtmp);
+    dogecoin_tx_free(txtmp);
+
+    // hex‐encode output
+    size_t hexout_len = signed_tx->len * 2 + 1;
+    char* hexout = dogecoin_malloc(hexout_len);
+    if (!hexout) {
+        cstr_free(signed_tx, true);
+        return 0;
+    }
+    utils_bin_to_hex((unsigned char*)signed_tx->str, signed_tx->len, hexout);
+    cstr_free(signed_tx, true);
+
+    // determine buffer need
+    size_t need = strlen(hexout) + 1;
+
+    // step 1: query mode
+    if (!signedrawtx) {
+        *signed_size = need;
+        dogecoin_free(hexout);
+        return 1;
+    }
+
+    // step 2: write mode
+    if (*signed_size < need) {
+        printf("signed buffer too small (need %zu bytes)\n", need);
+        dogecoin_free(hexout);
+        return 0;
+    }
+    memcpy(signedrawtx, hexout, need - 1);
+    signedrawtx[need - 1] = '\0';
+    dogecoin_free(hexout);
+
+    return 1;
+}

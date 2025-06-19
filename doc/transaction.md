@@ -16,8 +16,10 @@
     - [**add_output**](#add_output)
     - [**finalize_transaction**](#finalize_transaction)
     - [**get_raw_transaction**](#get_raw_transaction)
+    - [**get_raw_transaction_ex**](#get_raw_transaction_ex)
     - [**clear_transaction**](#clear_transaction)
     - [**sign_raw_transaction**](#sign_raw_transaction)
+    - [**sign_raw_transaction_ex**](#sign_raw_transaction_ex)
     - [**sign_transaction**](#sign_transaction)
     - [**store_raw_transaction**](#store_raw_transaction)
 
@@ -241,6 +243,31 @@ int main() {
 
 ---
 
+
+### **get_raw_transaction_ex**
+
+```c
+int get_raw_transaction_ex(int   txindex,
+                           char* buf,
+                           size_t buf_cap);
+```
+
+The `get_raw_transaction_ex` function writes the raw hexadecimal representation of the working transaction at index `txindex` into the caller-supplied buffer `buf` (of total size `buf_cap`). On success it returns the number of characters written (not counting the terminating `'\0'`); if the index is invalid, a pointer is NULL, or the buffer is too small, it returns 0. Unlike `get_raw_transaction()`, this version avoids allocating a new string on the heap, making it ideal when you already manage your own buffer.
+
+*C usage:*
+
+```c
+char buf[TXHEXMAXLEN + 1];
+int len = get_raw_transaction_ex(index, buf, sizeof(buf));
+if (len == 0) {
+    // handle error
+} else {
+    printf("Transaction hex: %s\n", buf);
+}
+```
+
+---
+
 ### **clear_transaction**
 
 `void clear_transaction(int txindex)`
@@ -301,6 +328,41 @@ int main() {
     printf("The final signed transaction hex is: %s\n", rawhex);
     clear_transaction(index);
 }
+```
+
+---
+
+### **sign_raw_transaction_ex**
+
+```c
+int sign_raw_transaction_ex(int           inputindex,
+                            const char*   incomingrawtx,
+                            char*         signedrawtx,
+                            size_t*       signed_size,
+                            const char*   scripthex,
+                            int           sighashtype,
+                            const char*   privkey);
+```
+
+The `sign_raw_transaction_ex` function offers a two-step interface for signing a single input of a raw transaction. In **query mode**, you pass `signedrawtx == NULL`; the function writes the required buffer size (including the null terminator) into `*signed_size` and returns 1. In **write mode**, you allocate at least that many bytes, pass the buffer in `signedrawtx` (with `*signed_size` set to its capacity), and call it again. On success it writes the signed transaction hex (plus `'\0'`) into your buffer and returns 1; on failure it returns 0. This pattern avoids extra heap allocations when you want to supply your own output buffer.
+
+*C usage:*
+
+```c
+// Stage 1: query required size
+size_t need = 0;
+if (!sign_raw_transaction_ex(0, rawhex, NULL, &need, scripthex, 1, wif)) {
+    // error
+}
+
+// Stage 2: allocate and sign
+char *out = malloc(need);
+if (!out) { /* OOM */ }
+if (!sign_raw_transaction_ex(0, rawhex, out, &need, scripthex, 1, wif)) {
+    // error
+}
+printf("Signed transaction: %s\n", out);
+free(out);
 ```
 
 ---
