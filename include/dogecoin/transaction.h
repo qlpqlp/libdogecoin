@@ -101,6 +101,10 @@ LIBDOGECOIN_API int sign_transaction_w_privkey(int txindex, int vout_index, char
 
 LIBDOGECOIN_API int store_raw_transaction(char* incomingrawtx);
 
+LIBDOGECOIN_API int get_raw_transaction_ex(int txindex, char* buf, size_t buf_cap);
+
+LIBDOGECOIN_API int sign_raw_transaction_ex(int inputindex, const char* incomingrawtx, char* signedrawtx, size_t* signed_size, const char* scripthex, int sighashtype, const char* privkey);
+
 LIBDOGECOIN_END_DECL
 
 #endif // __LIBDOGECOIN_TRANSACTION_H__

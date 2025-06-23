@@ -427,6 +427,29 @@ void test_transaction()
     // transaction with both inputs signed:
     u_assert_str_eq(raw_hexadecimal_transaction, expected_signed_raw_hexadecimal_transaction);
 
+    // test get_raw_transaction_ex with the working transaction index
+    char* buf = malloc(TXHEXMAXLEN + 1);
+    u_assert_not_null(buf);
+    int len = get_raw_transaction_ex(working_transaction_index, buf, TXHEXMAXLEN + 1);
+    u_assert_true(len > 0);
+    u_assert_str_eq(buf, get_raw_transaction(working_transaction_index));
+    dogecoin_free(buf);
+
+    // test sign_raw_transaction_ex (two-step) on the unsigned two-input TX
+    size_t needed = 0;
+
+    // query required size
+    u_assert_int_eq(sign_raw_transaction_ex(0, unsigned_hexadecimal_transaction, NULL, &needed, utxo_scriptpubkey, 1, private_key_wif), 1);
+
+    // allocate and sign
+    char* out = malloc(needed);
+    u_assert_not_null(out);
+    u_assert_int_eq(sign_raw_transaction_ex(0, unsigned_hexadecimal_transaction, out, &needed, utxo_scriptpubkey, 1, private_key_wif), 1);
+
+    // must match the expected single-input signed TX
+    u_assert_str_eq(out, expected_single_input_signed_transaction);
+    dogecoin_free(out);
+
     // ----------------------------------------------------------------
     // test conversion from p2pkh to script hash and back
 
@@ -539,4 +562,18 @@ void test_transaction()
     u_assert_not_null(raw_hexadecimal_transaction);
     u_assert_str_not_eq(raw_hexadecimal_transaction, "");
 
+    // test get_raw_transaction_ex on the large transaction
+    char buf2[TXHEXMAXLEN + 1];
+    int len2 = get_raw_transaction_ex(working_transaction_index, buf2, sizeof(buf2));
+    u_assert_true(len2 > 0);
+    u_assert_str_eq(buf2, get_raw_transaction(working_transaction_index));
+
+    // test sign_raw_transaction_ex on input 0 of the large transaction
+    size_t need2 = 0;
+    u_assert_int_eq(sign_raw_transaction_ex(0, raw_hexadecimal_transaction, NULL, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
+    char* out2 = malloc(need2);
+    u_assert_not_null(out2);
+    u_assert_int_eq(sign_raw_transaction_ex(0, raw_hexadecimal_transaction, out2, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
+    u_assert_true(strlen(out2) > 0);
+    dogecoin_free(out2);
 }
