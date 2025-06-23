@@ -440,6 +440,15 @@ int sign_raw_transaction_ex(int inputindex, const char* incomingrawtx, char* sig
 /* finalize the transaction being worked on at (txindex), with the (destinationaddress) paying a fee of (subtractedfee) in a buffer (buf) of size (buf_cap) */
 int finalize_transaction_ex(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress, char* buf, size_t buf_cap);
 
+/* sign and store one vin of the working tx at (txindex); writes signed hex into (buf) with capacity (buf_cap) */
+int sign_indexed_raw_transaction_ex(int txindex, int inputindex, const char* scripthex, int sighashtype, const char* privkey, char* buf, size_t buf_cap);
+
+/* sign all inputs of the working tx at (txindex) with (script_pubkey)/(privkey); writes signed hex into (buf) with capacity (buf_cap) */
+int sign_transaction_ex(int txindex, const char* script_pubkey, const char* privkey, char* buf, size_t buf_cap);
+
+/* convenience wrapper: sign a single-key p2pkh tx at (txindex) using (privkey); writes signed hex into (buf) with capacity (buf_cap) */
+int sign_transaction_w_privkey_ex(int txindex, const char* privkey, char* buf, size_t buf_cap);
+
 /* QR Code Generation Functions
 ---------------------------------
 */

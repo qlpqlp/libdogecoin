@@ -977,3 +977,105 @@ int finalize_transaction_ex(int   txindex,
     // stream final hex into caller buffer
     return get_raw_transaction_ex(txindex, buf, buf_cap);
 }
+
+/**
+ * @brief This function signs a single vin (`inputindex`) of the working
+ * transaction at `txindex` without allocating heap memory for the hex.
+ * It:
+ *   1. Serialises the transaction into `buf`,
+ *   2. Calls `sign_raw_transaction_ex()` **in-place** on that buffer,
+ *   3. Persists the signed hex back to the hash-table slot.
+ *
+ * @param txindex     The index of the working transaction in memory.
+ * @param inputindex  The vin to sign.
+ * @param scripthex   The script PubKey (hex) that locks the referenced UTXO.
+ * @param sighashtype Signature hash type (e.g. 1 = SIGHASH_ALL).
+ * @param privkey     WIF-encoded private key to sign with.
+ * @param buf         Caller-supplied output buffer for the hex.
+ * @param buf_cap     Capacity of `buf` in bytes.
+ *
+ * @return 1 on success, 0 on error.
+ */
+int sign_indexed_raw_transaction_ex(int  txindex,
+                                    int  inputindex,
+                                    const char* scripthex,
+                                    int  sighashtype,
+                                    const char* privkey,
+                                    char* buf,
+                                    size_t buf_cap)
+{
+    if (!buf || buf_cap == 0) return 0;
+    if (!get_raw_transaction_ex(txindex, buf, buf_cap))                 /* (1) */
+        return 0;
+
+    size_t cap = buf_cap;
+    if (!sign_raw_transaction_ex(inputindex, buf, buf, &cap,            /* (2) */
+                                 scripthex, sighashtype, privkey))
+        return 0;
+
+    return save_raw_transaction(txindex, buf);                          /* (3) */
+}
+
+
+/**
+ * @brief Signs **all** inputs of the working transaction at `txindex`
+ * into the caller-provided buffer `buf`. No heap strings are created.
+ *
+ * @param txindex        Index of the working transaction.
+ * @param script_pubkey  The common script PubKey for all inputs (hex).
+ * @param privkey        WIF private key.
+ * @param buf            Output buffer receiving the final signed hex.
+ * @param buf_cap        Capacity of `buf` in bytes.
+ *
+ * @return 1 if the transaction was fully signed & stored, 0 otherwise.
+ */
+int sign_transaction_ex(int  txindex,
+                        const char* script_pubkey,
+                        const char* privkey,
+                        char* buf,
+                        size_t buf_cap)
+{
+    if (!buf || buf_cap == 0 || !script_pubkey || !privkey) return 0;
+
+    working_transaction* tx = find_transaction(txindex);
+    if (!tx) return 0;
+    size_t vin_cnt = tx->transaction->vin->len;
+
+    if (!get_raw_transaction_ex(txindex, buf, buf_cap))                 /* initial */
+        return 0;
+
+    for (size_t i = 0; i < vin_cnt; ++i) {
+        size_t cap = buf_cap;
+        if (!sign_raw_transaction_ex((int)i, buf, buf, &cap,
+                                     script_pubkey, 1, privkey))
+            return 0;
+    }
+    return save_raw_transaction(txindex, buf);
+}
+
+
+/**
+ * @brief Convenience wrapper around `sign_transaction_ex()` that derives
+ * the P2PKH script PubKey from the supplied WIF key.
+ *
+ * @param txindex  Index of the working transaction.
+ * @param privkey  WIF-encoded private key (used for both script derivation
+ *                 and signing).
+ * @param buf      Output buffer for the fully-signed hex.
+ * @param buf_cap  Capacity of `buf` in bytes.
+ *
+ * @return 1 on success, 0 on error.
+ */
+int sign_transaction_w_privkey_ex(int  txindex,
+                                  const char* privkey,
+                                  char* buf,
+                                  size_t buf_cap)
+{
+    if (!privkey) return 0;
+    char* script_pubkey = dogecoin_private_key_wif_to_pubkey_hash((char*)privkey);
+    if (!script_pubkey) return 0;
+
+    int ok = sign_transaction_ex(txindex, script_pubkey, privkey, buf, buf_cap);
+    dogecoin_free(script_pubkey);
+    return ok;
+}
