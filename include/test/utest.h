@@ -313,7 +313,7 @@
             if (!r_) {                                                   \
                 printf("FAILED - %s() - Line %d\n", __func__, __LINE__); \
                 printf("\tExpect: \tnot NULL\n");                        \
-                printf("\tReceive:\tNULL\n", r_);                        \
+                printf("\tReceive:\tNULL\n");                            \
                 U_TESTS_FAIL++;                                          \
                 return;                                                  \
             };                                                           \
