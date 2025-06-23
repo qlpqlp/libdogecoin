@@ -534,7 +534,7 @@ void test_transaction()
     // add outputs
     u_assert_int_eq(add_output(working_transaction_index, "DGKhMhaagCrpQuzuKQoZsGYnCsw8f2DuBq", "97687.14577424"), 1);
 
-    // bug: finalize_transaction returns NULL instead of the hex-encoded transaction
+    // finalize the transaction and verify its not null or empty
     raw_hexadecimal_transaction = finalize_transaction(working_transaction_index, "DGKhMhaagCrpQuzuKQoZsGYnCsw8f2DuBq", "0.08679272", "97687.23256696", "DMVMYSajAj7qQ7L6D81KiGxTMx8mrB9cgc");
     u_assert_not_null(raw_hexadecimal_transaction);
     u_assert_str_not_eq(raw_hexadecimal_transaction, "");
