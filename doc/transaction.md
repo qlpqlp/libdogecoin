@@ -15,6 +15,7 @@
     - [**add_utxo**](#add_utxo)
     - [**add_output**](#add_output)
     - [**finalize_transaction**](#finalize_transaction)
+    - [**finalize_transaction_ex**](#finalize_transaction_ex)
     - [**get_raw_transaction**](#get_raw_transaction)
     - [**get_raw_transaction_ex**](#get_raw_transaction_ex)
     - [**clear_transaction**](#clear_transaction)
@@ -216,6 +217,38 @@ int main() {
     char* rawhex = finalize_transaction(index, external_address, "0.00226", "12.0", my_address);
     printf("Finalized transaction hex is %s.", rawhex);
     clear_transaction(index);
+}
+```
+
+---
+
+### **finalize_transaction_ex**
+
+```c
+int finalize_transaction_ex(int txindex, const char* destinationaddress, const char* subtractedfee, const char* total_in_doge, const char* changeaddress, char* out_hex, size_t out_cap);
+```
+
+`finalize_transaction_ex` one-shots the *“close & return change”* step while **avoiding a heap allocation**: it finalizes the working transaction at `txindex`, figures out fees / change exactly as `finalize_transaction()` does, hex-serialises the result straight into the caller-supplied buffer `out_hex` (whose capacity in bytes is `out_cap`), then returns the number of characters written (not counting the terminating `'\0'`).
+If any argument is invalid or the buffer is too small the function returns 0.
+
+*C usage:*
+
+```c
+// build the TX (add_utxo / add_output)
+
+char txhex[TXHEXMAXLEN + 1];          // +1 for the NUL
+int n = finalize_transaction_ex(idx,
+                                "nbGfXLskPh7eM1iG5zz5EfDkkNTo9TRmde", // destination
+                                "0.00226",                            // fee
+                                "12.0",                               // total inputs
+                                "noxKJyGPugPRN4wqvrwsrtYXuQCk7yQEsy", // change back here
+                                txhex,
+                                sizeof(txhex));
+
+if (n == 0) {
+    // handle error
+} else {
+    printf("Finalised TX (%d chars):\n%s\n", n, txhex);
 }
 ```
 
