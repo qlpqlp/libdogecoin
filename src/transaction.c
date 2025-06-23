@@ -27,6 +27,7 @@
 
 #include <assert.h>
 
+#include <dogecoin/dogecoin.h>
 #include <dogecoin/base58.h>
 #include <dogecoin/koinu.h>
 #include <dogecoin/transaction.h>
@@ -913,4 +914,66 @@ int sign_raw_transaction_ex(int    inputindex,
     dogecoin_free(hexout);
 
     return 1;
+}
+
+/**
+ * @brief  This function 'closes the inputs' by returning change to the recipient
+ * after the total amount and desired fee is confirmed. It uses the same logic as finalize_transaction,
+ * but writes the result into a caller-provided buffer.
+ *
+ * @param txindex The index of the working transaction to finalize.
+ * @param destinationaddress The address where the funds are being sent.
+ * @param subtractedfee The amount to set aside as a fee to the miner.
+ * @param out_dogeamount_for_verification An echo of the total amount to send.
+ * @param changeaddress The address of the sender to receive the change.
+ * @param buf Buffer to receive the hex string.
+ * @param buf_cap Capacity of buf in bytes.
+ *
+ * @return Number of bytes written on success, or 0 on error.
+ */
+int finalize_transaction_ex(int   txindex,
+                            char* destinationaddress,
+                            char* subtractedfee,
+                            char* out_dogeamount_for_verification,
+                            char* changeaddress,
+                            char* buf,
+                            size_t buf_cap)
+{
+    working_transaction* tx = find_transaction(txindex);
+    if (!tx || !buf || buf_cap == 0) return 0;
+
+    // fee / totals
+    int      is_testnet     = chain_from_b58_prefix_bool(destinationaddress);
+    uint64_t fee_koinu      = coins_to_koinu_str(subtractedfee);
+    uint64_t total_in_koinu = coins_to_koinu_str(out_dogeamount_for_verification);
+    uint64_t expected_total = total_in_koinu - fee_koinu;
+    uint64_t tx_out_total   = 0;
+    int      p2pkh_hits     = 0;
+
+    int vout_len = (int)tx->transaction->vout->len;
+    for (int i = 0; i < vout_len; ++i) {
+        dogecoin_tx_out* tout = vector_idx(tx->transaction->vout, i);
+        tx_out_total += tout->value;
+
+        char addr[P2PKHLEN]; dogecoin_mem_zero(addr, sizeof addr);
+        p2pkh_hits += dogecoin_tx_out_pubkey_hash_to_p2pkh_address(
+                          tout, addr, is_testnet);
+
+        // last output: maybe append change
+        if (i == vout_len - 1 && changeaddress) {
+            if (make_change(txindex, changeaddress, fee_koinu,
+                            total_in_koinu - tx_out_total)) {
+                dogecoin_tx_out* ch =
+                    vector_idx(tx->transaction->vout,
+                               tx->transaction->vout->len - 1);
+                tx_out_total += ch->value;
+                ++p2pkh_hits;
+            }
+        }
+    }
+
+    if (p2pkh_hits < 1 || tx_out_total != expected_total) return 0;
+
+    // stream final hex into caller buffer
+    return get_raw_transaction_ex(txindex, buf, buf_cap);
 }

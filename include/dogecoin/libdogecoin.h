@@ -431,6 +431,15 @@ char* get_raw_transaction(int txindex);
 /* clear the transaction at (txindex) in memory */
 void clear_transaction(int txindex);
 
+/* retrieve the raw transaction at (txindex) as a hex string (char*) in a buffer (buf) of size (buf_cap) */
+int get_raw_transaction_ex(int txindex, char* buf, size_t buf_cap);
+
+/* sign a raw transaction in memory at (txindex), sign (inputindex) with (scripthex) of (sighashtype), with (privkey) in a buffer (signedrawtx) of size (signed_size) */
+int sign_raw_transaction_ex(int inputindex, const char* incomingrawtx, char* signedrawtx, size_t* signed_size, const char* scripthex, int sighashtype, const char* privkey);
+
+/* finalize the transaction being worked on at (txindex), with the (destinationaddress) paying a fee of (subtractedfee) in a buffer (buf) of size (buf_cap) */
+int finalize_transaction_ex(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress, char* buf, size_t buf_cap);
+
 /* QR Code Generation Functions
 ---------------------------------
 */

@@ -562,18 +562,24 @@ void test_transaction()
     u_assert_not_null(raw_hexadecimal_transaction);
     u_assert_str_not_eq(raw_hexadecimal_transaction, "");
 
-    // test get_raw_transaction_ex on the large transaction
+    // test finalize_transaction_ex on the large transaction
+    char txhex_large[TXHEXMAXLEN + 1];
+    u_assert_true(finalize_transaction_ex(working_transaction_index, "DGKhMhaagCrpQuzuKQoZsGYnCsw8f2DuBq", "0.08679272", "97687.23256696", "DMVMYSajAj7qQ7L6D81KiGxTMx8mrB9cgc", txhex_large, sizeof(txhex_large)) > 0);
+    u_assert_str_not_eq(txhex_large, "");
+
+    // get_raw_transaction_ex must produce identical hex
     char buf2[TXHEXMAXLEN + 1];
     int len2 = get_raw_transaction_ex(working_transaction_index, buf2, sizeof(buf2));
     u_assert_true(len2 > 0);
-    u_assert_str_eq(buf2, get_raw_transaction(working_transaction_index));
+    u_assert_str_eq(buf2, txhex_large);
 
     // test sign_raw_transaction_ex on input 0 of the large transaction
     size_t need2 = 0;
-    u_assert_int_eq(sign_raw_transaction_ex(0, raw_hexadecimal_transaction, NULL, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
+    u_assert_int_eq(sign_raw_transaction_ex(0, txhex_large, NULL, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
+
     char* out2 = malloc(need2);
     u_assert_not_null(out2);
-    u_assert_int_eq(sign_raw_transaction_ex(0, raw_hexadecimal_transaction, out2, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
+    u_assert_int_eq(sign_raw_transaction_ex(0, txhex_large, out2, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
     u_assert_true(strlen(out2) > 0);
     dogecoin_free(out2);
 }
