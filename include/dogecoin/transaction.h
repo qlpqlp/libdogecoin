@@ -1,6 +1,6 @@
 /*
  The MIT License (MIT)
- 
+
  Copyright (c) 2022 bluezr
  Copyright (c) 2022-2024 The Dogecoin Foundation
 
@@ -33,6 +33,10 @@
 #include <dogecoin/tx.h>
 
 LIBDOGECOIN_BEGIN_DECL
+
+// Maximum length of standard tx based on relay limit (100 000).
+// Internally this is cited as 200001 for strings that represent it because +stringterm.
+#define TXHEXMAXLEN 200001
 
 /* hashmap functions */
 typedef struct working_transaction {
@@ -68,7 +72,7 @@ LIBDOGECOIN_API const char *get_raw_tx(const char *prompt_tx);
 
 LIBDOGECOIN_API const char *get_private_key(const char *prompt_key);
 
-LIBDOGECOIN_API int start_transaction(); // #returns  an index of a transaction to build in memory.  (1, 2, etc) ..   
+LIBDOGECOIN_API int start_transaction(); // #returns  an index of a transaction to build in memory.  (1, 2, etc) ..
 
 LIBDOGECOIN_API int save_raw_transaction(int txindex, const char* hexadecimal_transaction);
 

@@ -400,6 +400,9 @@ int getDerivedHDAddressFromAcctPubKey(const char* ext_pubkey, const uint32_t ind
 ----------------------------------------------------------------
 */
 
+//#define TXHEXMAXLEN 200001 // Maximum length of standard tx based on relay limit (100 000).  Internally this is cited as 200001 for strings that represent it because +stringterm.
+#define TXHEXMAXLEN 200001
+
 /* create a new dogecoin transaction: Returns the (txindex) in memory of the transaction being worked on. */
 int start_transaction();
 

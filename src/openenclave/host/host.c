@@ -590,8 +590,8 @@ int main(int argc, char* argv[])
     else if (strcmp(cmd, "sign_transaction") == 0)
     {
         printf("- Sign a transaction\n");
-        char raw_tx[1024] = {0};
-        char signed_tx[4096] = {0};
+        char raw_tx[TXHEXMAXLEN] = {0};
+        char signed_tx[TXHEXMAXLEN] = {0};
         if (!password && !yubikey && auth_token == 0) {
             password = getpass("Enter management password: ");
             if (!password) {
