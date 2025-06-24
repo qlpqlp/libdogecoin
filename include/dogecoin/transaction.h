@@ -107,6 +107,12 @@ LIBDOGECOIN_API int sign_raw_transaction_ex(int inputindex, const char* incoming
 
 LIBDOGECOIN_API int finalize_transaction_ex(int txindex, char* destinationaddress, char* subtractedfee, char* out_dogeamount_for_verification, char* changeaddress, char* buf, size_t buf_cap);
 
+LIBDOGECOIN_API int sign_indexed_raw_transaction_ex(int txindex, int inputindex, const char* scripthex, int sighashtype, const char* privkey, char* buf, size_t buf_cap);
+
+LIBDOGECOIN_API int sign_transaction_ex(int txindex, const char* script_pubkey, const char* privkey, char* buf, size_t buf_cap);
+
+LIBDOGECOIN_API int sign_transaction_w_privkey_ex(int txindex, const char* privkey, char* buf, size_t buf_cap);
+
 LIBDOGECOIN_END_DECL
 
 #endif // __LIBDOGECOIN_TRANSACTION_H__

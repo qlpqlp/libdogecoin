@@ -23,6 +23,9 @@
     - [**sign_raw_transaction_ex**](#sign_raw_transaction_ex)
     - [**sign_transaction**](#sign_transaction)
     - [**store_raw_transaction**](#store_raw_transaction)
+    - [**sign_indexed_raw_transaction_ex**](#sign_indexed_raw_transaction_ex)
+    - [**sign_transaction_ex**](#sign_transaction_ex)
+    - [**sign_transaction_w_privkey_ex**](#sign_transaction_w_privkey_ex)
 
 ## Introduction
 
@@ -458,5 +461,74 @@ int main() {
     int index = store_raw_transaction(hex_to_store);
     printf("The transaction hex at index %d is %s.\n", index, get_raw_transaction(index));
     clear_transaction(index);
+}
+```
+
+---
+
+### **sign_indexed_raw_transaction_ex**
+
+```c
+int sign_indexed_raw_transaction_ex(int txindex,
+                                    int inputindex,
+                                    const char* scripthex,
+                                    int sighashtype,
+                                    const char* privkey,
+                                    char* buf,
+                                    size_t buf_cap);
+```
+
+Signs **one** specific input (`inputindex`) of the working transaction stored at `txindex`, writes the fully-updated raw-hex straight into the caller-supplied buffer `buf` (capacity `buf_cap`) and returns the number of hex characters written (not counting the terminating `'\0'`).
+If the buffer is too small or any argument is invalid the function returns 0.
+
+```c
+char signedhex[TXHEXMAXLEN + 1];
+int n = sign_indexed_raw_transaction_ex(idx,        /* tx we're editing   */
+                                        0,          /* which vin to sign  */
+                                        scripthex,  /* utxo's scriptPubKey*/
+                                        1,          /* SIGHASH_ALL        */
+                                        wif,        /* signing key        */
+                                        signedhex,
+                                        sizeof signedhex);
+if (n == 0) { /* error */ }
+```
+
+### **sign_transaction_ex**
+
+```c
+int sign_transaction_ex(int txindex,
+                         const char* script_pubkey,
+                         const char* privkey,
+                         char* buf,
+                         size_t buf_cap);
+```
+
+High-level helper that iterates over **all** inputs of the working transaction at `txindex`, signing each one with the same `script_pubkey` / `privkey` pair, then emits the completely-signed transaction hex into `buf`.
+Return-value semantics are identical to the previous function.
+
+```c
+char finalhex[TXHEXMAXLEN + 1];
+if (!sign_transaction_ex(idx, scripthex, wif, finalhex, sizeof finalhex)) {
+    /* signing failed */
+}
+printf("fully-signed tx:\n%s\n", finalhex);
+```
+
+### **sign_transaction_w_privkey_ex**
+
+```c
+int sign_transaction_w_privkey_ex(int txindex,
+                                  const char* privkey,
+                                  char* buf,
+                                  size_t buf_cap);
+```
+
+Single-key convenience wrapper: derives the P2PKH `scriptPubKey` from `privkey`, signs **every** input of the transaction at `txindex`, and streams the result into `buf`.
+Ideal for the common *all inputs belong to the same wallet* scenario.
+
+```c
+char txhex[TXHEXMAXLEN + 1];
+if (!sign_transaction_w_privkey_ex(idx, wif, txhex, sizeof txhex)) {
+    /* error */
 }
 ```

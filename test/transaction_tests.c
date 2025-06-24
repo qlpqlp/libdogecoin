@@ -582,4 +582,20 @@ void test_transaction()
     u_assert_int_eq(sign_raw_transaction_ex(0, txhex_large, out2, &need2, utxo_scriptpubkey, 1, private_key_wif), 1);
     u_assert_true(strlen(out2) > 0);
     dogecoin_free(out2);
+
+    // sign just vin-0 and store it
+    char buf3[TXHEXMAXLEN + 1];
+    u_assert_true(sign_indexed_raw_transaction_ex(working_transaction_index, 0, utxo_scriptpubkey, 1, private_key_wif, buf3, sizeof(buf3)));
+    u_assert_str_eq(buf3, get_raw_transaction(working_transaction_index));
+
+    // sign all remaining inputs in one shot
+    char buf4[TXHEXMAXLEN + 1];
+    u_assert_true(sign_transaction_ex(working_transaction_index, utxo_scriptpubkey, private_key_wif, buf4, sizeof(buf4)));
+    u_assert_str_eq(buf4, get_raw_transaction(working_transaction_index));
+
+    // convenience wrapper that does the same with just the priv-key
+    char buf5[TXHEXMAXLEN + 1];
+    u_assert_true(sign_transaction_w_privkey_ex(working_transaction_index, private_key_wif, buf5, sizeof(buf5)));
+    u_assert_str_eq(buf5, get_raw_transaction(working_transaction_index));
+
 }
