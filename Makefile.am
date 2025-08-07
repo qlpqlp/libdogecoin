@@ -67,6 +67,7 @@ noinst_HEADERS = \
     include/dogecoin/tool.h \
     include/dogecoin/transaction.h \
     include/dogecoin/tx.h \
+    include/dogecoin/utf8proc.h \
     include/dogecoin/utils.h \
     include/dogecoin/validation.h \
     include/dogecoin/vector.h \
@@ -114,6 +115,7 @@ libdogecoin_la_SOURCES = \
     src/cli/tool.c \
     src/transaction.c \
     src/tx.c \
+    src/utf8proc.c \
     src/utils.c \
     src/validation.c \
     src/vector.c
