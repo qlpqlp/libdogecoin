@@ -55,6 +55,7 @@
 #include <dogecoin/spv.h>
 #include <dogecoin/tx.h>
 #include <dogecoin/utils.h>
+#include <event2/event.h>
 
 static const unsigned int HEADERS_MAX_RESPONSE_TIME = 120;
 static const unsigned int MIN_TIME_DELTA_FOR_STATE_CHECK = 5;
@@ -214,6 +215,15 @@ void dogecoin_spv_client_free(dogecoin_spv_client *client)
 {
     if (!client)
         return;
+
+#ifndef _WIN32
+    // set stdin to back to blocking
+    int stdin_flags = fcntl(STDIN_FILENO, F_GETFL);
+    if (stdin_flags != -1 && (stdin_flags & O_NONBLOCK))
+    {
+        fcntl(STDIN_FILENO, F_SETFL, stdin_flags & ~O_NONBLOCK);
+    }
+#endif
 
     if (client->headers_db)
     {
@@ -702,6 +712,10 @@ void dogecoin_net_spv_post_cmd(dogecoin_node *node, dogecoin_p2p_msg_hdr *hdr, s
         if (c == 'Q' || c == 'q') {
             printf("Disconnecting...\n");
             dogecoin_node_group_shutdown(client->nodegroup);
+
+        // exit the event loop immediately
+        if (client->nodegroup && client->nodegroup->event_base)
+            event_base_loopbreak(client->nodegroup->event_base);
         }
     }
 #else
@@ -713,6 +727,10 @@ void dogecoin_net_spv_post_cmd(dogecoin_node *node, dogecoin_p2p_msg_hdr *hdr, s
 
         printf("Disconnecting...\n");
         dogecoin_node_group_shutdown(client->nodegroup);
+
+        // exit the event loop immediately
+        if (client->nodegroup && client->nodegroup->event_base)
+            event_base_loopbreak(client->nodegroup->event_base);
     }
 #endif
 }

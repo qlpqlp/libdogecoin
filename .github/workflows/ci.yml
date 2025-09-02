@@ -215,6 +215,7 @@ jobs:
         run: |
           if ([ "${{ matrix.host }}" != "x86_64-pc-windows-msvc" ]); then
             if ([ "${{ matrix.name }}" == "x86_64-macos" ] || [ "${{ matrix.name }}" == "arm64-macos" ]); then
+                brew uninstall cmake
                 brew update
                 brew install automake coreutils ${{ matrix.packages }}
                 echo PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH" >> ~/.bashrc

@@ -392,6 +392,8 @@ dogecoin_wallet* dogecoin_wallet_init(const dogecoin_chainparams* chain, const c
     char* wallet_prefix = (char*)chain->chainname;
     char* walletfile = NULL;
     dogecoin_bool res = false;
+    // no prompts when an address is passed
+    dogecoin_bool prompt_ok = prompt && (address == NULL);
     if (mnemonic_in) {
         char* wallet_type = "_mnemonic";
         char* wallet_type_prefix = concat(wallet_prefix, wallet_type);
@@ -487,7 +489,7 @@ dogecoin_wallet* dogecoin_wallet_init(const dogecoin_chainparams* chain, const c
                 dogecoin_wallet_free(wallet);
                 return NULL;
             }
-            if (prompt) {
+            if (prompt_ok) {
                 printf("Store seed in encrypted file? (Y/n): ");
 
                 char buffer[MAX_LEN];
@@ -790,16 +792,16 @@ dogecoin_bool dogecoin_wallet_create(dogecoin_wallet* wallet, const char* file_p
     if (!wallet)
         return false;
 
-    struct stat buffer;
-    if (stat(file_path, &buffer) != 0) {
-        *error = 1;
-        return false;
-    }
-
     // open wallet file if not already open
     if (!wallet->dbfile) {
-        memcpy_safe((char*)wallet->filename, file_path, strlen(file_path));
         wallet->dbfile = fopen(file_path, "a+b");
+        if (wallet->dbfile) {
+            snprintf((char*)wallet->filename, sizeof(wallet->filename), "%s", file_path);
+        }
+        else {
+            *error = 1;
+            return false;
+        }
     }
 
     // write file-header-magic
@@ -951,8 +953,11 @@ dogecoin_bool dogecoin_wallet_load(dogecoin_wallet* wallet, const char* file_pat
     }
 
     wallet->dbfile = fopen(file_path, *created ? "a+b" : "r+b");
-
+    if (wallet->dbfile) {
+        snprintf((char*)wallet->filename, sizeof(wallet->filename), "%s", file_path);
+    }
     if (*created) {
+
         if (!dogecoin_wallet_create(wallet, file_path, error)) {
             return false;
         }
