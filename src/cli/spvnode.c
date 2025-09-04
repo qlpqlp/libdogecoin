@@ -419,7 +419,20 @@ int main(int argc, char* argv[]) {
         signal(SIGINT, handle_sigint);
 
 #if WITH_WALLET
-        dogecoin_wallet* wallet = dogecoin_wallet_init(chain, address, name, mnemonic_in, pass, encrypted, tpm, file_num, master_key, prompt);
+        dogecoin_wallet_opts wopts = {
+            .mnemonic_in = mnemonic_in,
+            .pass = pass,
+            .encrypted = encrypted,
+            .tpm = tpm,
+            .file_num = file_num,
+            .master_key = master_key,
+            .prompt = prompt
+        };
+        dogecoin_wallet* wallet = dogecoin_wallet_init(
+            chain,
+            address,
+            name,
+            &wopts);
         if (!wallet) {
             printf("Could not initialize wallet...\n");
             // clear and free the passphrase

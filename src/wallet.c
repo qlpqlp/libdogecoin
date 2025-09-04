@@ -384,7 +384,15 @@ dogecoin_wallet* dogecoin_wallet_new(const dogecoin_chainparams *params)
     return wallet;
 }
 
-dogecoin_wallet* dogecoin_wallet_init(const dogecoin_chainparams* chain, const char* address, const char* name, const char* mnemonic_in, const char* pass, const dogecoin_bool encrypted, const dogecoin_bool tpm, const int file_num, const dogecoin_bool master_key, const dogecoin_bool prompt) {
+dogecoin_wallet* dogecoin_wallet_init(const dogecoin_chainparams* chain, const char* address, const char* name, const dogecoin_wallet_opts* opts) {
+    /* local aliases with sane defaults to keep body changes minimal */
+    const char* mnemonic_in   = opts ? opts->mnemonic_in   : NULL;
+    const char* pass          = opts ? opts->pass          : NULL;
+    dogecoin_bool encrypted   = opts ? opts->encrypted     : false;
+    dogecoin_bool tpm         = opts ? opts->tpm           : false;
+    int file_num              = opts ? opts->file_num      : -1;
+    dogecoin_bool master_key  = opts ? opts->master_key    : false;
+    dogecoin_bool prompt      = opts ? opts->prompt        : false;
     dogecoin_wallet* wallet = dogecoin_wallet_new(chain);
     int error;
     dogecoin_bool created;
@@ -583,6 +591,7 @@ void print_utxos(dogecoin_wallet* wallet) {
                 printf("script_pubkey:  %s\n", utxo->script_pubkey);
                 printf("amount:         %s\n", utxo->amount);
                 debug_print("confirmations:  %d\n", utxo->confirmations);
+                printf("height:         %d\n", utxo->height);
                 printf("spendable:      %d\n", utxo->spendable);
                 printf("solvable:       %d\n", utxo->solvable);
                 wallet_total_u64 += coins_to_koinu_str(utxo->amount);
@@ -601,6 +610,7 @@ void print_utxos(dogecoin_wallet* wallet) {
                 printf("script_pubkey:  %s\n", utxo->script_pubkey);
                 printf("amount:         %s\n", utxo->amount);
                 debug_print("confirmations:  %d\n", utxo->confirmations);
+                printf("height:         %d\n", utxo->height);
                 printf("spendable:      %d\n", utxo->spendable);
                 printf("solvable:       %d\n", utxo->solvable);
                 wallet_total_u64 += coins_to_koinu_str(utxo->amount);
@@ -746,6 +756,17 @@ void dogecoin_wallet_scrape_utxos(dogecoin_wallet* wallet, dogecoin_wtx* wtx) {
                         // finally add utxo to rbtree:
                         dogecoin_btree_tfind(utxo, &wallet->unspent_rbtree, dogecoin_utxo_compare);
                         add_dogecoin_utxo(utxo);
+                    }
+                    else {
+                        // update existing utxo height for re-mined tx during reorg
+                        dogecoin_utxo* existing_utxo;
+                        dogecoin_utxo* tmp;
+                        HASH_ITER(hh, utxos, existing_utxo, tmp) {
+                            if (memcmp(existing_utxo->txid, &utxo_txid, 32) == 0 && existing_utxo->vout == j) {
+                                existing_utxo->height = wtx->height;
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -1538,7 +1559,13 @@ void dogecoin_wallet_check_transaction(void *ctx, dogecoin_tx *tx, unsigned int 
 
 dogecoin_wallet* dogecoin_wallet_read(char* address) {
     dogecoin_chainparams* chain = (dogecoin_chainparams*)chain_from_b58_prefix(address);
-    dogecoin_wallet* wallet = dogecoin_wallet_init(chain, address, NULL, 0, 0, false, false, -1, false, false);
+    dogecoin_wallet_opts opts = {
+        .mnemonic_in = NULL,
+        .pass = NULL,
+        .encrypted = false, .tpm = false, .file_num = -1,
+        .master_key = false, .prompt = false
+    };
+    dogecoin_wallet* wallet = dogecoin_wallet_init(chain, address, NULL, &opts);
     return wallet;
 }
 
