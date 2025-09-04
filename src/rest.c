@@ -224,6 +224,107 @@ void dogecoin_http_request_cb(struct evhttp_request *req, void *arg) {
         evbuffer_add_printf(evb, "Block size: %lu\n", size);
         evbuffer_add_printf(evb, "Tx count: %lu\n", tx_count);
         evbuffer_add_printf(evb, "Total tx size: %lu\n", total_tx_size);
+    } else if (strcmp(path, "/getRawTx") == 0) {
+        // Return ASCII raw tx by txid: ?txid=<64-hex big-endian>
+        const char* query = evhttp_uri_get_query(uri);
+        if (!query) { evhttp_send_error(req, HTTP_BADREQUEST, "missing ?txid"); evbuffer_free(evb); return; }
+
+        // extract txid=... up to '&'
+        const char* p = strstr(query, "txid=");
+        if (!p) { evhttp_send_error(req, HTTP_BADREQUEST, "missing txid param"); evbuffer_free(evb); return; }
+        p += 5;
+        char txid_hex[65]; size_t n = 0;
+        while (p[n] && p[n] != '&' && n < 64) { txid_hex[n] = p[n]; n++; }
+        txid_hex[n] = '\0';
+        if (n != 64) { evhttp_send_error(req, HTTP_BADREQUEST, "invalid txid length"); evbuffer_free(evb); return; }
+
+        //parse big-endian hex -> bytes, then convert to little-endian for cache compare
+        uint8_t txid_be[32]; size_t outlen = 0;
+        utils_hex_to_bin(txid_hex, txid_be, 64, &outlen);
+        if (outlen != 32) { evhttp_send_error(req, HTTP_BADREQUEST, "invalid txid hex"); evbuffer_free(evb); return; }
+        uint8_t txid_le[32];
+        for (int i = 0; i < 32; ++i) txid_le[i] = txid_be[31 - i];
+
+        int found = 0;
+        for (unsigned int i = 0; i < wallet->vec_wtxes->len; i++) {
+            dogecoin_wtx* wtx = vector_idx(wallet->vec_wtxes, i);
+            if (!wtx || !wtx->tx) continue;
+            if (memcmp(wtx->tx_hash_cache, txid_le, 32) != 0) continue;
+
+            // serialize & hex-encode the tx
+            cstring* ser = cstr_new_sz(1024);
+            if (!ser) { evhttp_send_error(req, HTTP_INTERNAL, "oom"); evbuffer_free(evb); return; }
+            dogecoin_tx_serialize(ser, wtx->tx);
+            char* hexout = (char*)malloc(ser->len * 2 + 1);
+            if (!hexout) { cstr_free(ser, true); evhttp_send_error(req, HTTP_INTERNAL, "oom"); evbuffer_free(evb); return; }
+            utils_bin_to_hex((unsigned char*)ser->str, ser->len, hexout);
+            cstr_free(ser, true);
+
+            evbuffer_add_printf(evb, "%s\n", hexout);
+            free(hexout);
+            found = 1;
+            break;
+        }
+
+        if (!found) { evhttp_send_error(req, HTTP_NOTFOUND, "tx not found"); evbuffer_free(evb); return; }
+
+    } else if (strcmp(path, "/viewTx") == 0) {
+        // Print UTXO-style info for a single tx by txid; optional ?vout=<n> or ?n=<n> to filter
+        const char* query = evhttp_uri_get_query(uri);
+        if (!query) { evhttp_send_error(req, HTTP_BADREQUEST, "missing ?txid"); evbuffer_free(evb); return; }
+
+        // extract txid
+        const char* p = strstr(query, "txid=");
+        if (!p) { evhttp_send_error(req, HTTP_BADREQUEST, "missing txid param"); evbuffer_free(evb); return; }
+        p += 5;
+        char txid_hex[65]; size_t n = 0;
+        while (p[n] && p[n] != '&' && n < 64) { txid_hex[n] = p[n]; n++; }
+        txid_hex[n] = '\0';
+        if (n != 64) { evhttp_send_error(req, HTTP_BADREQUEST, "invalid txid length"); evbuffer_free(evb); return; }
+
+        // parse optional vout / n
+        int have_vout = 0, want_vout = 0;
+        const char* pv = strstr(query, "vout=");
+        if (!pv) pv = strstr(query, "n=");
+        if (pv) {
+            pv += (pv[1] == 'o') ? 5 : 2; // 'vout='=5, 'n='=2
+            char numbuf[16]; size_t k = 0;
+            while (pv[k] && pv[k] != '&' && k < sizeof(numbuf) - 1) { numbuf[k] = pv[k]; k++; }
+            numbuf[k] = '\0';
+            want_vout = atoi(numbuf);
+            have_vout = 1;
+        }
+
+        // utxo->txid bytes are big-endian (display order)
+        uint8_t txid_be[32]; size_t outlen = 0;
+        utils_hex_to_bin(txid_hex, txid_be, 64, &outlen);
+        if (outlen != 32) { evhttp_send_error(req, HTTP_BADREQUEST, "invalid txid hex"); evbuffer_free(evb); return; }
+
+        int found = 0;
+        if (HASH_COUNT(wallet->utxos) > 0) {
+            dogecoin_utxo* utxo;
+            dogecoin_utxo* tmp;
+            HASH_ITER(hh, wallet->utxos, utxo, tmp) {
+                if (memcmp(utxo->txid, txid_be, 32) != 0) continue;
+                if (have_vout && utxo->vout != want_vout) continue;
+                found = 1;
+                evbuffer_add_printf(evb, "%s\n", "----------------------");
+                evbuffer_add_printf(evb, "txid:           %s\n", utils_uint8_to_hex(utxo->txid, sizeof utxo->txid));
+                evbuffer_add_printf(evb, "vout:           %d\n", utxo->vout);
+                evbuffer_add_printf(evb, "address:        %s\n", utxo->address);
+                evbuffer_add_printf(evb, "script_pubkey:  %s\n", utxo->script_pubkey);
+                evbuffer_add_printf(evb, "amount:         %s\n", utxo->amount);
+                evbuffer_add_printf(evb, "confirmations:  %d\n", utxo->confirmations);
+                evbuffer_add_printf(evb, "height:         %d\n", utxo->height);
+                evbuffer_add_printf(evb, "spendable:      %d\n", utxo->spendable);
+                evbuffer_add_printf(evb, "solvable:       %d\n", utxo->solvable);
+            }
+        }
+
+        if (!found) {
+            evbuffer_add_printf(evb, "No matching UTXOs for txid\n");
+        }
+
     } else {
         evhttp_send_error(req, HTTP_NOTFOUND, "Not Found");
         evbuffer_free(evb);
