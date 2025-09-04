@@ -541,18 +541,17 @@ dogecoin_wallet* dogecoin_wallet_init(const dogecoin_chainparams* chain, const c
         }
         dogecoin_free(address_copy);
     }
-#ifdef USE_UNISTRING
     else if (wallet->waddr_vector->len == 0) {
-        int i=0;
-        for(;i<20;i++) {
-            dogecoin_wallet_next_bip44_addr(wallet);
+        // Prefer BIP44; if not available, fall back to legacy
+        if (dogecoin_wallet_next_bip44_addr(wallet) != NULL) {
+            int i=0;
+            for(;i<20;i++) {
+                dogecoin_wallet_next_bip44_addr(wallet);
+            }
+        } else {
+            dogecoin_wallet_next_addr(wallet);
         }
     }
-#else
-    else if (wallet->waddr_vector->len == 0) {
-        dogecoin_wallet_next_addr(wallet);
-    }
-#endif
     return wallet;
 }
 
