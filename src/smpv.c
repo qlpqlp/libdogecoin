@@ -193,19 +193,29 @@ dogecoin_bool dogecoin_smpv_process_tx(
     dogecoin_smpv_tx* smpv_tx = dogecoin_calloc(1, sizeof(dogecoin_smpv_tx));
     if (!smpv_tx) return false;
     
-    /* Generate transaction ID from raw data hash */
-    smpv_tx->txid = dogecoin_calloc(1, 65);
-    uint256_t tx_hash;
-    dogecoin_dblhash((const unsigned char*)raw_tx_hex, strlen(raw_tx_hex), tx_hash);
-    char* hex_str = utils_uint8_to_hex(tx_hash, 32);
-    strcpy(smpv_tx->txid, hex_str);
-    /* Note: hex_str is a static buffer, don't free it */
-    
     smpv_tx->raw_hex = dogecoin_calloc(1, strlen(raw_tx_hex) + 1);
     strcpy(smpv_tx->raw_hex, raw_tx_hex);
     
     /* Decode the transaction for real processing */
     smpv_tx->decoded_tx = dogecoin_smpv_decode_tx(raw_tx_hex);
+    
+    /* Generate transaction ID from decoded transaction */
+    smpv_tx->txid = dogecoin_calloc(1, 65);
+    if (smpv_tx->decoded_tx) {
+        /* Use proper transaction hash calculation */
+        uint256_t tx_hash;
+        dogecoin_tx_hash(smpv_tx->decoded_tx, tx_hash);
+        char* hex_str = utils_uint8_to_hex(tx_hash, 32);
+        strcpy(smpv_tx->txid, hex_str);
+        /* Note: hex_str is a static buffer, don't free it */
+    } else {
+        /* Fallback: hash the hex string if decoding fails */
+        uint256_t tx_hash;
+        dogecoin_dblhash((const unsigned char*)raw_tx_hex, strlen(raw_tx_hex), tx_hash);
+        char* hex_str = utils_uint8_to_hex(tx_hash, 32);
+        strcpy(smpv_tx->txid, hex_str);
+        /* Note: hex_str is a static buffer, don't free it */
+    }
     if (smpv_tx->decoded_tx) {
         /* Get real transaction size */
         smpv_tx->size = dogecoin_smpv_get_tx_size(smpv_tx->decoded_tx);
