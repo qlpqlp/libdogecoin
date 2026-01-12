@@ -14,6 +14,8 @@
     - [GET /getChaintip](#get-getchaintip)
     - [GET /getTimestamp](#get-gettimestamp)
     - [GET /getLastBlockInfo](#get-getlastblockinfo)
+    - [GET /getRawTx](#get-getrawtx)
+    - [GET /viewTx](#get-viewtx)
 
 ## Abstract
 
@@ -365,6 +367,83 @@ curl http://localhost:<port>/getLastBlockInfo
 Block size: 4130
 Tx count: 11
 Total tx size: 3355
+```
+
+---
+
+### GET **/getRawTx**
+
+Returns the raw transaction (hex) for a given transaction ID present in the wallet DB.
+
+#### **Request**
+
+* **Method:** `GET`
+* **URL:** `/getRawTx?txid=<64-hex>`
+
+#### **Response**
+
+* **Content-Type:** `text/plain`
+* **Body:**
+
+  ```
+  <raw-tx-hex>
+  ```
+* **Errors:**
+
+  * `400 Bad Request` missing/invalid `txid`
+  * `404 Not Found` transaction not found in wallet DB
+
+#### **Example**
+
+```bash
+curl "http://localhost:<port>/getRawTx?txid=7c6728205d56b2b625463a10ade9c9a7ab2bf19ae2e05328f1f39e6f943c397b"
+```
+
+---
+
+### GET **/viewTx**
+
+Shows wallet-scoped details for a single transaction, optionally filtered to one output.
+
+#### **Request**
+
+* **Method:** `GET`
+* **URL:** `/viewTx?txid=<64-hex>[&vout=<n>]`
+
+#### **Response**
+
+* **Content-Type:** `text/plain`
+* **Body (on match):**
+
+  ```
+  ----------------------
+  txid:           <txid>
+  vout:           <vout>
+  address:        <address>
+  script_pubkey:  <script_pubkey>
+  amount:         <amount>
+  confirmations:  <confirmations>
+  height:         <height>
+  spendable:      <0|1>
+  solvable:       <0|1>
+  ```
+* **If no match:**
+
+  ```
+  No matching UTXOs for txid
+  ```
+* **Errors:**
+
+  * `400 Bad Request` missing/invalid `txid`
+
+#### **Examples**
+
+```bash
+# All wallet UTXOs from this tx
+curl "http://localhost:<port>/viewTx?txid=7c6728205d56b2b625463a10ade9c9a7ab2bf19ae2e05328f1f39e6f943c397b"
+
+# Only vout 2
+curl "http://localhost:<port>/viewTx?txid=7c6728205d56b2b625463a10ade9c9a7ab2bf19ae2e05328f1f39e6f943c397b&vout=2"
 ```
 
 ---
