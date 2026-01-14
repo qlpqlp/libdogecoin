@@ -7,10 +7,12 @@ SMPV is a lightweight system for tracking mempool transactions for specific Doge
 SMPV provides real-time monitoring of mempool transactions for watched addresses, allowing applications to:
 
 - Track incoming and outgoing transactions
-- Monitor transaction fees and sizes
+- Monitor transaction sizes
 - Receive real-time notifications
 - Generate statistics and reports
 - Handle both confirmed and unconfirmed transactions
+
+> Note: SMPV operates on mempool data only and does not calculate transaction fees. Fee computation requires UTXO context that is not available during mempool tracking.
 
 ## Features
 
@@ -18,7 +20,7 @@ SMPV provides real-time monitoring of mempool transactions for watched addresses
 - **Address Watching**: Add/remove addresses to monitor
 - **Transaction Processing**: Process raw mempool transactions
 - **Real-time Notifications**: Callback-based transaction alerts
-- **Statistics**: Track transaction counts, fees, and balances
+- **Statistics**: Track transaction counts and activity
 - **JSON Export**: Generate JSON reports for integration
 
 ### Key Benefits
@@ -26,6 +28,20 @@ SMPV provides real-time monitoring of mempool transactions for watched addresses
 - **Real-time**: Immediate transaction detection
 - **Flexible**: Easy integration with existing applications
 - **Reliable**: Robust error handling and memory management
+
+## Enabling SMPV in `spvnode`
+
+SMPV is optional. To enable it in the `spvnode` tool, start `spvnode` with the SMPV flag:
+
+```bash
+./spvnode -x scan
+```
+
+If you are also running the HTTP server, the SMPV endpoints are documented separately in `rest.md`:
+
+```bash
+./spvnode -x -u 127.0.0.1:8080 scan
+```
 
 ## API Reference
 
@@ -128,8 +144,7 @@ Stops SMPV monitoring.
 void dogecoin_smpv_get_stats(
     const dogecoin_smpv_client* client,
     uint32_t* total_txs,
-    uint32_t* watched_addresses,
-    uint64_t* total_fees
+    uint32_t* watched_addresses
 );
 ```
 Gets mempool statistics.
@@ -167,7 +182,6 @@ typedef struct {
     char* txid;                    /* Transaction ID (hex string) */
     char* raw_hex;                 /* Raw transaction hex */
     dogecoin_tx* decoded_tx;       /* Decoded transaction */
-    uint64_t fee;                  /* Transaction fee in koinu */
     uint64_t size;                 /* Transaction size in bytes */
     uint64_t timestamp;            /* When transaction was first seen */
     dogecoin_bool is_confirmed;    /* Whether transaction is confirmed */
@@ -191,115 +205,71 @@ typedef struct {
 
 ## Usage Example
 
+This example creates an SMPV client, adds two watched addresses, and processes a raw transaction hex string.
+
 ```c
-#include <dogecoin/smpv.h>
+#include <stdio.h>
+
 #include <dogecoin/chainparams.h>
+#include <dogecoin/smpv.h>
 
 /* Callback function for transaction notifications */
-void tx_callback(const dogecoin_smpv_tx* tx, const char* address, void* user_data) {
+static void tx_callback(const dogecoin_smpv_tx* tx, const char* address, void* user_data)
+{
+    (void)user_data;
     printf("New transaction for %s: %s\n", address, tx->txid);
-    printf("Fee: %llu koinu\n", (unsigned long long)tx->fee);
     printf("Size: %llu bytes\n", (unsigned long long)tx->size);
 }
 
-int main() {
+int main(void)
+{
     /* Create SMPV client */
     dogecoin_smpv_client* client = dogecoin_smpv_client_new(&dogecoin_chainparams_main);
     if (!client) {
         printf("Failed to create SMPV client\n");
         return 1;
     }
-    
+
     /* Add addresses to watch */
     dogecoin_smpv_add_watcher(client, "D7Y55vD8nNtW7VnT9Xr6Qc4vB8hN3jK2mP");
     dogecoin_smpv_add_watcher(client, "D8Y66wE9nOtW8WnU0Xs7Rd5cC9i4kL3nQ");
-    
+
     /* Start monitoring */
-    dogecoin_smpv_start(client);
-    
-    /* Process a transaction */
-    const char* raw_tx = "0100000001..."; /* Raw transaction hex */
-    dogecoin_smpv_process_tx(client, raw_tx, tx_callback, NULL);
-    
+    if (!dogecoin_smpv_start(client)) {
+        printf("Failed to start SMPV\n");
+        dogecoin_smpv_client_free(client);
+        return 1;
+    }
+
+    /*
+     * Process a transaction.
+     * In a real integration, raw_tx_hex would typically come from a mempool feed
+     * (e.g. inv/tx messages from a peer connection).
+     */
+    const char* raw_tx_hex = "0100000001..."; /* Raw transaction hex */
+    dogecoin_smpv_process_tx(client, raw_tx_hex, tx_callback, NULL);
+
     /* Get statistics */
-    uint32_t total_txs, watched_addresses;
-    uint64_t total_fees;
-    dogecoin_smpv_get_stats(client, &total_txs, &watched_addresses, &total_fees);
-    
+    uint32_t total_txs = 0;
+    uint32_t watched_addresses = 0;
+    dogecoin_smpv_get_stats(client, &total_txs, &watched_addresses);
+
     printf("Watched addresses: %u\n", watched_addresses);
     printf("Mempool transactions: %u\n", total_txs);
-    printf("Total fees: %llu koinu\n", (unsigned long long)total_fees);
-    
+
     /* Clean up */
     dogecoin_smpv_stop(client);
     dogecoin_smpv_client_free(client);
-    
+
     return 0;
 }
 ```
 
+
+
 ## Building and Testing
 
-### Build Scripts
-- `build_smpv_standalone.sh` - Linux/WSL build script
-- `build_smpv_test.bat` - Windows build script
-
-### Test Suite
-- `test/smpv_standalone.c` - Comprehensive test suite
-- `contrib/examples/smpv_example.c` - Usage example
-
-### Running Tests
-```bash
-# Linux/WSL
-chmod +x build_smpv_standalone.sh
-./build_smpv_standalone.sh
-./build/smpv_standalone
-
-# Windows
-build_smpv_test.bat
-build\smpv_test.exe
-```
-
-## Integration with libdogecoin
-
-SMPV is designed to work alongside libdogecoin's existing functionality:
-
-- **Chain Parameters**: Uses libdogecoin's chain parameter system
-- **Memory Management**: Follows libdogecoin's memory management patterns
-- **Error Handling**: Consistent with libdogecoin's error handling approach
-- **API Design**: Follows libdogecoin's API naming conventions
-
-## Performance Considerations
-
-- **Memory Usage**: Minimal memory footprint with efficient data structures
-- **CPU Usage**: Low CPU overhead for transaction processing
-- **Scalability**: Supports monitoring of multiple addresses simultaneously
-- **Real-time**: Immediate transaction detection and notification
-
-## Security Considerations
-
-- **Input Validation**: All inputs are validated before processing
-- **Memory Safety**: Proper memory allocation and deallocation
-- **Error Handling**: Graceful handling of all error conditions
-- **Data Integrity**: Transaction data is validated before processing
-
-## Future Enhancements
-
-- **Full Transaction Decoding**: Complete transaction parsing and validation
-- **UTXO Tracking**: Track unspent transaction outputs
-- **Fee Estimation**: Dynamic fee calculation based on network conditions
-- **Blockchain Integration**: Integration with blockchain data for confirmation tracking
-- **Network Monitoring**: Direct connection to mempool sources
-
-## Contributing
-
-SMPV follows libdogecoin's contribution guidelines:
-
-1. Follow the existing code style
-2. Add comprehensive tests
-3. Update documentation
-4. Ensure cross-platform compatibility
-5. Maintain backward compatibility
+SMPV is built as part of libdogecoin and does not require standalone build scripts. It is exercised through `spvnode` and covered by the standard libdogecoin test suite.
 
 ## License
 
