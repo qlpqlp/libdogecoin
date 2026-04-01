@@ -32,6 +32,79 @@
 #include <string.h>
 #include <assert.h>
 
+typedef struct bip38_test_vector_ {
+    const char* passphrase;
+    const char* encrypted;
+    const char* wif;
+    const char* hex;
+    dogecoin_bool compressed;
+} bip38_test_vector;
+
+/* Official vectors from BIP-0038 (non-EC multiplied). */
+static const bip38_test_vector BIP38_NON_EC_VECTORS[] = {
+    {
+        "TestingOneTwoThree",
+        "6PRVWUbkzzsbcVac2qwfssoUJAN1Xhrg6bNk8J7Nzm5H7kxEbn2Nh2ZoGg",
+        "5KN7MzqK5wt2TP1fQCYyHBtDrXdJuXbUzm4A9rKAteGu3Qi5CVR",
+        "CBF4B9F70470856BB4F40F80B87EDB90865997FFEE6DF315AB166D713AF433A5",
+        false
+    },
+    {
+        "Satoshi",
+        "6PRNFFkZc2NZ6dJqFfhRoFNMR9Lnyj7dYGrzdgXXVMXcxoKTePPX1dWByq",
+        "5HtasZ6ofTHP6HCwTqTkLDuLQisYPah7aUnSKfC7h4hMUVw2gi5",
+        "09C2686880095B1A4C249EE3AC4EEA8A014F11E6F986D0B5025AC1F39AFBD9AE",
+        false
+    },
+    {
+        "TestingOneTwoThree",
+        "6PYNKZ1EAgYgmQfmNVamxyXVWHzK5s6DGhwP4J5o44cvXdoY7sRzhtpUeo",
+        "L44B5gGEpqEDRS9vVPz7QT35jcBG2r3CZwSwQ4fCewXAhAhqGVpP",
+        "CBF4B9F70470856BB4F40F80B87EDB90865997FFEE6DF315AB166D713AF433A5",
+        true
+    },
+    {
+        "Satoshi",
+        "6PYLtMnXvfG3oJde97zRyLYFZCYizPU5T3LwgdYJz1fRhh16bU7u6PPmY7",
+        "KwYgW8gcxj1JWJXhPSu4Fqwzfhp5Yfi42mdYmMa4XqK7NJxXUSK7",
+        "09C2686880095B1A4C249EE3AC4EEA8A014F11E6F986D0B5025AC1F39AFBD9AE",
+        true
+    }
+};
+
+/* Test official BIP38 vectors (non-EC multiplied). */
+void test_bip38_reference_vectors() {
+    printf("Testing BIP38 reference vectors (non-EC multiplied)...\n");
+
+    size_t i;
+    for (i = 0; i < sizeof(BIP38_NON_EC_VECTORS) / sizeof(BIP38_NON_EC_VECTORS[0]); i++) {
+        const bip38_test_vector* v = &BIP38_NON_EC_VECTORS[i];
+        dogecoin_key wif_key;
+
+        /* Validate encrypted string format */
+        assert(dogecoin_bip38_is_valid(v->encrypted) == true);
+
+        /* Sanity-check expected WIF against expected hex from the vector. */
+        assert(dogecoin_privkey_decode_wif(v->wif, &dogecoin_chainparams_main, &wif_key) == true);
+        char wif_hex[65];
+        utils_bin_to_hex(wif_key.privkey, DOGECOIN_ECKEY_PKEY_LENGTH, wif_hex);
+        assert(strcmp(wif_hex, v->hex) == 0);
+
+        /* Decrypt BIP38 and check private key bytes/format */
+        uint8_t decrypted_key[DOGECOIN_ECKEY_PKEY_LENGTH];
+        dogecoin_bool compressed = false;
+        dogecoin_bool ok = dogecoin_bip38_decrypt(v->encrypted, v->passphrase, decrypted_key, &compressed);
+        assert(ok == true);
+        assert(compressed == v->compressed);
+
+        char decrypted_hex[65];
+        utils_bin_to_hex(decrypted_key, DOGECOIN_ECKEY_PKEY_LENGTH, decrypted_hex);
+        assert(strcmp(decrypted_hex, v->hex) == 0);
+    }
+
+    printf("  ✓ BIP38 reference vector tests passed\n");
+}
+
 /* Test paper wallet creation and validation */
 void test_paper_wallet_creation() {
     printf("Testing paper wallet creation...\n");
@@ -350,6 +423,9 @@ int main() {
     test_bip38_validation();
     printf("\n");
     
+    test_bip38_reference_vectors();
+    printf("\n");
+
     test_sweep_functionality();
     printf("\n");
     
