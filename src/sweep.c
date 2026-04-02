@@ -25,6 +25,9 @@
 #include <dogecoin/key.h>
 #include <dogecoin/address.h>
 #include <dogecoin/transaction.h>
+#include <dogecoin/koinu.h>
+#include <dogecoin/tx.h>
+#include <dogecoin/cstr.h>
 #include <dogecoin/script.h>
 #include <dogecoin/utils.h>
 #include <dogecoin/mem.h>
@@ -34,6 +37,78 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+static void sweep_result_fail(dogecoin_sweep_result* r, const char* msg)
+{
+    if (!r || !msg) return;
+    if (r->error_message) dogecoin_free(r->error_message);
+    r->error_message = dogecoin_calloc(1, strlen(msg) + 1);
+    if (r->error_message) strcpy(r->error_message, msg);
+    r->success = false;
+}
+
+static dogecoin_bool sweep_options_utxo_ok(const dogecoin_sweep_options* o)
+{
+    return o && o->utxo_txid && o->utxo_txid[0] && o->utxo_vout >= 0 && o->utxo_total_doge && o->utxo_total_doge[0];
+}
+
+/* Fee and output amount (koinu); fills fee_doge / out_doge buffers for finalize_transaction / add_output. */
+static dogecoin_bool sweep_compute_amounts(
+    const dogecoin_sweep_options* options,
+    uint64_t* fee_koinu_out,
+    uint64_t* out_koinu_out,
+    char* fee_doge,
+    char* out_doge)
+{
+    char total_mut[64];
+    strncpy(total_mut, options->utxo_total_doge, sizeof(total_mut) - 1);
+    total_mut[sizeof(total_mut) - 1] = '\0';
+    uint64_t total_koinu = coins_to_koinu_str(total_mut);
+    /* Rough vsize: version + vin/vout counts + 1 signed P2PKH in + 1 P2PKH out + locktime */
+    size_t est_vsize = 10u + 180u + 34u;
+    uint64_t fee_koinu = options->fee_per_byte * est_vsize;
+    if (fee_koinu < options->min_fee) fee_koinu = options->min_fee;
+    if (fee_koinu > options->max_fee) fee_koinu = options->max_fee;
+    if (total_koinu <= fee_koinu) return false;
+    uint64_t out_koinu = total_koinu - fee_koinu;
+    if (!koinu_to_coins_str(fee_koinu, fee_doge)) return false;
+    if (!koinu_to_coins_str(out_koinu, out_doge)) return false;
+    *fee_koinu_out = fee_koinu;
+    *out_koinu_out = out_koinu;
+    return true;
+}
+
+/* Build unsigned tx in the working-transaction table. On success, *txindex_out is valid until clear_transaction. */
+static dogecoin_bool sweep_build_unsigned_tx(
+    const dogecoin_sweep_options* options,
+    const char* fee_doge,
+    const char* out_doge,
+    int* txindex_out)
+{
+    char dest_copy[P2PKHLEN];
+    char total_copy[64];
+    strncpy(dest_copy, options->destination_address, sizeof(dest_copy) - 1);
+    dest_copy[sizeof(dest_copy) - 1] = '\0';
+    strncpy(total_copy, options->utxo_total_doge, sizeof(total_copy) - 1);
+    total_copy[sizeof(total_copy) - 1] = '\0';
+
+    int txindex = start_transaction();
+    if (!add_utxo(txindex, options->utxo_txid, options->utxo_vout)) {
+        clear_transaction(txindex);
+        return false;
+    }
+    if (!add_output(txindex, dest_copy, (char*)out_doge)) {
+        clear_transaction(txindex);
+        return false;
+    }
+    char* raw = finalize_transaction(txindex, dest_copy, (char*)fee_doge, total_copy, NULL);
+    if (!raw) {
+        clear_transaction(txindex);
+        return false;
+    }
+    *txindex_out = txindex;
+    return true;
+}
 
 /* Initialize a paper wallet structure */
 dogecoin_paper_wallet* dogecoin_paper_wallet_new(void) {
@@ -123,6 +198,9 @@ dogecoin_sweep_options* dogecoin_sweep_options_new(const dogecoin_chainparams* c
     options->use_rbf = false;
     options->locktime = 0;
     options->chain_params = chain_params;
+    options->utxo_txid = NULL;
+    options->utxo_vout = -1;
+    options->utxo_total_doge = NULL;
     
     return options;
 }
@@ -133,6 +211,12 @@ void dogecoin_sweep_options_free(dogecoin_sweep_options* options) {
     
     if (options->destination_address) {
         dogecoin_free(options->destination_address);
+    }
+    if (options->utxo_txid) {
+        dogecoin_free(options->utxo_txid);
+    }
+    if (options->utxo_total_doge) {
+        dogecoin_free(options->utxo_total_doge);
     }
     
     dogecoin_free(options);
@@ -386,51 +470,132 @@ dogecoin_sweep_result* dogecoin_sweep_paper_wallet(
     
     /* Validate inputs */
     if (!wallet || !options) {
-        result->error_message = dogecoin_calloc(1, 50);
-        strcpy(result->error_message, "Invalid wallet or options");
+        sweep_result_fail(result, "Invalid wallet or options");
         return result;
     }
     
     if (!dogecoin_paper_wallet_is_valid(wallet)) {
-        result->error_message = dogecoin_calloc(1, 50);
-        strcpy(result->error_message, "Invalid paper wallet");
+        sweep_result_fail(result, "Invalid paper wallet");
         return result;
     }
     
     if (!options->destination_address) {
-        result->error_message = dogecoin_calloc(1, 50);
-        strcpy(result->error_message, "No destination address specified");
+        sweep_result_fail(result, "No destination address specified");
+        return result;
+    }
+
+    if (!sweep_options_utxo_ok(options)) {
+        sweep_result_fail(result,
+            "No UTXO specified: set prevout with dogecoin_sweep_options_set_utxo (txid, vout, total input amount)");
         return result;
     }
     
-    /* Get private key */
-    uint8_t private_key[DOGECOIN_ECKEY_PKEY_LENGTH];
-    if (!dogecoin_paper_wallet_get_private_key(wallet, private_key)) {
-        result->error_message = dogecoin_calloc(1, 50);
-        strcpy(result->error_message, "Failed to get private key");
+    char fee_doge[64];
+    char out_doge[64];
+    uint64_t fee_koinu = 0;
+    uint64_t out_koinu = 0;
+    if (!sweep_compute_amounts(options, &fee_koinu, &out_koinu, fee_doge, out_doge)) {
+        sweep_result_fail(result, "Fee exceeds UTXO value or amount conversion failed");
         return result;
     }
-    
-    /* Create transaction - placeholder implementation */
-    /* In a real implementation, you would create a proper transaction here */
-    /* For now, we'll just simulate success */
-    
-    /* For now, create a simple transaction structure */
-    /* In a real implementation, you would need to:
-     * 1. Query UTXOs for the source address
-     * 2. Calculate fees
-     * 3. Create inputs and outputs
-     * 4. Sign the transaction
-     * 5. Broadcast the transaction
-     */
-    
-    /* Set result properties */
-    result->success = true;
+
+    int txindex = 0;
+    if (!sweep_build_unsigned_tx(options, fee_doge, out_doge, &txindex)) {
+        sweep_result_fail(result, "Building unsigned sweep transaction failed");
+        return result;
+    }
+
+    char wif[PRIVKEYWIFLEN];
+    size_t wiflen = sizeof(wif);
+    if (!dogecoin_paper_wallet_get_wif(wallet, wif, wiflen)) {
+        clear_transaction(txindex);
+        sweep_result_fail(result, "Failed to encode private key as WIF for signing");
+        return result;
+    }
+
+    char* script_pubkey = dogecoin_private_key_wif_to_pubkey_hash(wif);
+    if (!script_pubkey) {
+        clear_transaction(txindex);
+        sweep_result_fail(result, "Failed to derive pubkey script from WIF");
+        return result;
+    }
+
+    if (!sign_transaction(txindex, script_pubkey, wif)) {
+        dogecoin_free(script_pubkey);
+        clear_transaction(txindex);
+        sweep_result_fail(result, "sign_transaction failed");
+        return result;
+    }
+    dogecoin_free(script_pubkey);
+
+    char hexbuf[TXHEXMAXLEN];
+    int hexlen = get_raw_transaction_ex(txindex, hexbuf, sizeof(hexbuf));
+    if (hexlen <= 0) {
+        clear_transaction(txindex);
+        sweep_result_fail(result, "get_raw_transaction_ex failed after sign");
+        return result;
+    }
+
+    dogecoin_tx* stx = dogecoin_tx_new();
+    if (!stx) {
+        clear_transaction(txindex);
+        sweep_result_fail(result, "out of memory");
+        return result;
+    }
+    uint8_t* bindata = dogecoin_malloc((size_t)hexlen / 2 + 1);
+    if (!bindata) {
+        dogecoin_tx_free(stx);
+        clear_transaction(txindex);
+        sweep_result_fail(result, "out of memory");
+        return result;
+    }
+    size_t binlen = 0;
+    utils_hex_to_bin(hexbuf, bindata, (size_t)hexlen, &binlen);
+    if (!dogecoin_tx_deserialize(bindata, binlen, stx, NULL)) {
+        dogecoin_free(bindata);
+        dogecoin_tx_free(stx);
+        clear_transaction(txindex);
+        sweep_result_fail(result, "deserialize signed transaction failed");
+        return result;
+    }
+    dogecoin_free(bindata);
+
+    uint256_t txhash;
+    dogecoin_tx_hash(stx, txhash);
+    dogecoin_tx_free(stx);
+    clear_transaction(txindex);
+
+    char txidhex[65];
+    utils_bin_to_hex((unsigned char*)txhash, sizeof(txhash), txidhex);
+    utils_reverse_hex(txidhex, 64);
+    txidhex[64] = '\0';
+
+    result->transaction_hex = dogecoin_calloc(1, (size_t)hexlen + 1);
+    result->transaction_id = dogecoin_calloc(1, strlen(txidhex) + 1);
+    if (!result->transaction_hex || !result->transaction_id) {
+        if (result->transaction_hex) dogecoin_free(result->transaction_hex);
+        if (result->transaction_id) dogecoin_free(result->transaction_id);
+        result->transaction_hex = NULL;
+        result->transaction_id = NULL;
+        sweep_result_fail(result, "out of memory");
+        return result;
+    }
+    memcpy(result->transaction_hex, hexbuf, (size_t)hexlen + 1);
+    strcpy(result->transaction_id, txidhex);
+
+    result->amount_swept = out_koinu;
+    result->fee_paid = fee_koinu;
     result->destination_address = dogecoin_calloc(1, strlen(options->destination_address) + 1);
+    if (!result->destination_address) {
+        dogecoin_free(result->transaction_hex);
+        dogecoin_free(result->transaction_id);
+        result->transaction_hex = NULL;
+        result->transaction_id = NULL;
+        sweep_result_fail(result, "out of memory");
+        return result;
+    }
     strcpy(result->destination_address, options->destination_address);
-    
-    /* Clean up - no transaction to free in placeholder implementation */
-    
+    result->success = true;
     return result;
 }
 
@@ -453,9 +618,13 @@ uint64_t dogecoin_sweep_estimate_fee(
     const dogecoin_paper_wallet* wallet,
     const dogecoin_sweep_options* options
 ) {
-    /* Simple fee estimation */
+    (void)wallet;
     if (!options) return 0;
-    return options->min_fee;
+    size_t est_vsize = 10u + 180u + 34u;
+    uint64_t fee_koinu = options->fee_per_byte * est_vsize;
+    if (fee_koinu < options->min_fee) fee_koinu = options->min_fee;
+    if (fee_koinu > options->max_fee) fee_koinu = options->max_fee;
+    return fee_koinu;
 }
 
 dogecoin_bool dogecoin_sweep_get_balance(
@@ -472,18 +641,115 @@ dogecoin_transaction* dogecoin_sweep_create_transaction(
     const dogecoin_paper_wallet* wallet,
     const dogecoin_sweep_options* options
 ) {
-    /* Placeholder - return NULL for now */
     (void)wallet;
-    (void)options;
-    return NULL;
+    if (!options || !options->destination_address || !sweep_options_utxo_ok(options)) return NULL;
+
+    char fee_doge[64];
+    char out_doge[64];
+    uint64_t fee_koinu = 0;
+    uint64_t out_koinu = 0;
+    if (!sweep_compute_amounts(options, &fee_koinu, &out_koinu, fee_doge, out_doge)) return NULL;
+
+    int txindex = 0;
+    if (!sweep_build_unsigned_tx(options, fee_doge, out_doge, &txindex)) return NULL;
+
+    char hexbuf[TXHEXMAXLEN];
+    int hexlen = get_raw_transaction_ex(txindex, hexbuf, sizeof(hexbuf));
+    if (hexlen <= 0) {
+        clear_transaction(txindex);
+        return NULL;
+    }
+
+    dogecoin_tx* tx = dogecoin_tx_new();
+    if (!tx) {
+        clear_transaction(txindex);
+        return NULL;
+    }
+    uint8_t* bindata = dogecoin_malloc((size_t)hexlen / 2 + 1);
+    if (!bindata) {
+        dogecoin_tx_free(tx);
+        clear_transaction(txindex);
+        return NULL;
+    }
+    size_t binlen = 0;
+    utils_hex_to_bin(hexbuf, bindata, (size_t)hexlen, &binlen);
+    if (!dogecoin_tx_deserialize(bindata, binlen, tx, NULL)) {
+        dogecoin_free(bindata);
+        dogecoin_tx_free(tx);
+        clear_transaction(txindex);
+        return NULL;
+    }
+    dogecoin_free(bindata);
+    clear_transaction(txindex);
+    return tx;
 }
 
 dogecoin_bool dogecoin_sweep_sign_transaction(
     dogecoin_transaction* transaction,
     const dogecoin_paper_wallet* wallet
 ) {
-    /* Placeholder */
-    return false;
+    if (!transaction || !wallet || !dogecoin_paper_wallet_is_valid(wallet)) return false;
+
+    char wif[PRIVKEYWIFLEN];
+    size_t wiflen = sizeof(wif);
+    if (!dogecoin_paper_wallet_get_wif(wallet, wif, wiflen)) return false;
+
+    cstring* ser = cstr_new_sz(1024);
+    if (!ser) return false;
+    dogecoin_tx_serialize(ser, transaction);
+    char* hex = dogecoin_malloc(ser->len * 2 + 1);
+    if (!hex) {
+        cstr_free(ser, true);
+        return false;
+    }
+    utils_bin_to_hex((unsigned char*)ser->str, ser->len, hex);
+    cstr_free(ser, true);
+
+    int txidx = store_raw_transaction(hex);
+    dogecoin_free(hex);
+    if (txidx <= 0) return false;
+
+    char* script_pubkey = dogecoin_private_key_wif_to_pubkey_hash(wif);
+    if (!script_pubkey) {
+        clear_transaction(txidx);
+        return false;
+    }
+    if (!sign_transaction(txidx, script_pubkey, wif)) {
+        dogecoin_free(script_pubkey);
+        clear_transaction(txidx);
+        return false;
+    }
+    dogecoin_free(script_pubkey);
+
+    char signedbuf[TXHEXMAXLEN];
+    if (!get_raw_transaction_ex(txidx, signedbuf, sizeof(signedbuf))) {
+        clear_transaction(txidx);
+        return false;
+    }
+    uint8_t* bindata = dogecoin_malloc(strlen(signedbuf) / 2 + 1);
+    if (!bindata) {
+        clear_transaction(txidx);
+        return false;
+    }
+    size_t binlen = 0;
+    utils_hex_to_bin(signedbuf, bindata, strlen(signedbuf), &binlen);
+    dogecoin_tx* signed_tx = dogecoin_tx_new();
+    if (!signed_tx) {
+        dogecoin_free(bindata);
+        clear_transaction(txidx);
+        return false;
+    }
+    if (!dogecoin_tx_deserialize(bindata, binlen, signed_tx, NULL)) {
+        dogecoin_free(bindata);
+        dogecoin_tx_free(signed_tx);
+        clear_transaction(txidx);
+        return false;
+    }
+    dogecoin_free(bindata);
+    dogecoin_tx_copy(transaction, signed_tx);
+    dogecoin_tx_free(signed_tx);
+    clear_transaction(txidx);
+    return true;
 }
 
 dogecoin_bool dogecoin_sweep_broadcast_transaction(
@@ -492,7 +758,11 @@ dogecoin_bool dogecoin_sweep_broadcast_transaction(
     char* transaction_id_out,
     size_t transaction_id_size
 ) {
-    /* Placeholder */
+    (void)transaction;
+    (void)chain_params;
+    (void)transaction_id_out;
+    (void)transaction_id_size;
+    /* Broadcasting requires a connected node / RPC; not implemented in this module. */
     return false;
 }
 
@@ -501,7 +771,17 @@ dogecoin_bool dogecoin_sweep_validate_transaction(
     const dogecoin_paper_wallet* wallet,
     const dogecoin_sweep_options* options
 ) {
-    /* Placeholder */
+    if (!transaction || !wallet || !options || !options->destination_address) return false;
+    size_t i;
+    for (i = 0; i < transaction->vout->len; i++) {
+        dogecoin_tx_out* o = vector_idx(transaction->vout, i);
+        char addr[P2PKHLEN];
+        dogecoin_mem_zero(addr, sizeof(addr));
+        int is_mainnet = (options->destination_address[0] == 'D');
+        if (dogecoin_tx_out_pubkey_hash_to_p2pkh_address(o, addr, is_mainnet) &&
+            strcmp(addr, options->destination_address) == 0)
+            return true;
+    }
     return false;
 }
 
@@ -513,13 +793,19 @@ dogecoin_bool dogecoin_sweep_get_stats(
     uint64_t* total_output_value_out,
     uint64_t* fee_out
 ) {
-    /* Placeholder */
-    if (input_count_out) *input_count_out = 0;
-    if (output_count_out) *output_count_out = 0;
-    if (total_input_value_out) *total_input_value_out = 0;
-    if (total_output_value_out) *total_output_value_out = 0;
-    if (fee_out) *fee_out = 0;
-    return false;
+    if (!transaction) return false;
+    if (input_count_out) *input_count_out = transaction->vin->len;
+    if (output_count_out) *output_count_out = transaction->vout->len;
+    if (total_input_value_out) *total_input_value_out = 0; /* not available from raw tx alone */
+    uint64_t outsum = 0;
+    size_t i;
+    for (i = 0; i < transaction->vout->len; i++) {
+        dogecoin_tx_out* o = vector_idx(transaction->vout, i);
+        outsum += (uint64_t)o->value;
+    }
+    if (total_output_value_out) *total_output_value_out = outsum;
+    if (fee_out) *fee_out = 0; /* needs input values from UTXO set */
+    return true;
 }
 
 /* Setter functions */
@@ -571,6 +857,38 @@ void dogecoin_sweep_options_set_locktime(
     if (options) {
         options->locktime = locktime;
     }
+}
+
+dogecoin_bool dogecoin_sweep_options_set_utxo(
+    dogecoin_sweep_options* options,
+    const char* txid_hex,
+    int vout,
+    const char* total_input_doge)
+{
+    if (!options || !txid_hex || !total_input_doge || vout < 0) return false;
+
+    if (options->utxo_txid) {
+        dogecoin_free(options->utxo_txid);
+        options->utxo_txid = NULL;
+    }
+    if (options->utxo_total_doge) {
+        dogecoin_free(options->utxo_total_doge);
+        options->utxo_total_doge = NULL;
+    }
+
+    options->utxo_txid = dogecoin_calloc(1, strlen(txid_hex) + 1);
+    options->utxo_total_doge = dogecoin_calloc(1, strlen(total_input_doge) + 1);
+    if (!options->utxo_txid || !options->utxo_total_doge) {
+        if (options->utxo_txid) dogecoin_free(options->utxo_txid);
+        if (options->utxo_total_doge) dogecoin_free(options->utxo_total_doge);
+        options->utxo_txid = NULL;
+        options->utxo_total_doge = NULL;
+        return false;
+    }
+    strcpy(options->utxo_txid, txid_hex);
+    strcpy(options->utxo_total_doge, total_input_doge);
+    options->utxo_vout = vout;
+    return true;
 }
 
 /* Getter functions */

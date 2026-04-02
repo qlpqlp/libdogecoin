@@ -208,12 +208,7 @@ if (!dogecoin_paper_wallet_set_wif(wallet, wif, chain)) {
 
 ## Testing
 
-The implementation includes comprehensive tests in `test/sweep_tests.c`. Run the tests to verify functionality:
-
-```bash
-gcc -o sweep_tests test/sweep_tests.c src/sweep.c src/bip38.c -Iinclude -ldogecoin
-./sweep_tests
-```
+The implementation includes comprehensive tests in `test/sweep_tests.c`, which are run as part of the unified test binary (`test_sweep` via `unittester.c`). After building, run `make check` or execute the `tests` program; CMake users run `ctest` or the `tests` target.
 
 ## Future Enhancements
 

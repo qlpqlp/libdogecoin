@@ -59,6 +59,7 @@ extern void test_random();
 extern void test_rmd160();
 extern void test_scrypt();
 extern void test_serialize();
+extern void test_sweep();
 extern void test_sha1();
 extern void test_sha1_hmac();
 extern void test_sha_256();
@@ -141,6 +142,7 @@ int main()
     u_run_test(test_rmd160);
     u_run_test(test_scrypt);
     u_run_test(test_serialize);
+    u_run_test(test_sweep);
     u_run_test(test_sha1);
     u_run_test(test_sha1_hmac);
     u_run_test(test_sha_256);

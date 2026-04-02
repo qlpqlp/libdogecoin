@@ -30,9 +30,12 @@
 
 LIBDOGECOIN_BEGIN_DECL
 
-/* BIP38 constants */
+/* BIP38 constants (non-EC multiplied keys: 0x01 0x42 + flag + addresshash + ciphertext) */
 #define BIP38_MAGIC_BYTE 0x01
-#define BIP38_FLAG_BYTE 0x42
+/** Second byte: non-EC multiplied key type (BIP38). */
+#define BIP38_TYPE_NON_EC 0x42
+/** Flag byte: top bits reserved per BIP38; bit 5 = compressed pubkey. */
+#define BIP38_FLAG_BASE 0xC0
 #define BIP38_SCRYPT_N 16384
 #define BIP38_SCRYPT_R 8
 #define BIP38_SCRYPT_P 8
@@ -55,8 +58,7 @@ LIBDOGECOIN_BEGIN_DECL
 /* BIP38 has lot/sequence flag */
 #define BIP38_HAS_LOT_SEQUENCE_FLAG 0x08
 
-/* BIP38 type flags */
-#define BIP38_TYPE_NON_EC_MULTIPLIED 0x00
+/* EC multiplied key type (second byte of payload). */
 #define BIP38_TYPE_EC_MULTIPLIED 0x43
 
 /* BIP38 encrypted key structure */

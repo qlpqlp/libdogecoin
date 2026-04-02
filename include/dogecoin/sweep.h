@@ -27,9 +27,10 @@
 #include <stddef.h>
 #include <dogecoin/dogecoin.h>
 #include <dogecoin/chainparams.h>
+#include <dogecoin/tx.h>
 
-/* Forward declaration */
-typedef struct dogecoin_transaction_ dogecoin_transaction;
+/* Sweep APIs use the same transaction object as the rest of libdogecoin. */
+typedef dogecoin_tx dogecoin_transaction;
 
 LIBDOGECOIN_BEGIN_DECL
 
@@ -59,12 +60,21 @@ typedef struct {
 /* Sweep options structure */
 typedef struct {
     char* destination_address;
-    uint64_t fee_per_byte; /* Fee in satoshis per byte */
-    uint64_t min_fee; /* Minimum fee in satoshis */
-    uint64_t max_fee; /* Maximum fee in satoshis */
+    uint64_t fee_per_byte; /* Fee in koinu per byte (see chain) */
+    uint64_t min_fee; /* Minimum fee in koinu */
+    uint64_t max_fee; /* Maximum fee in koinu */
     dogecoin_bool use_rbf; /* Replace-by-fee */
     uint32_t locktime; /* Locktime for transaction */
     const dogecoin_chainparams* chain_params;
+    /*
+     * UTXO to sweep (single prevout). Populate via dogecoin_sweep_options_set_utxo().
+     * Total input value must match the sum of the selected UTXO(s) in dogecoin string form
+     * (same format as transaction.c / finalize_transaction).
+     * Callers obtain txid/vout/amount from a wallet or node (libdogecoin does not query the chain here).
+     */
+    char* utxo_txid;
+    int utxo_vout;
+    char* utxo_total_doge;
 } dogecoin_sweep_options;
 
 /* Default sweep options */
@@ -139,7 +149,12 @@ LIBDOGECOIN_API dogecoin_bool dogecoin_paper_wallet_get_wif(
 /* Check if a paper wallet is valid */
 LIBDOGECOIN_API dogecoin_bool dogecoin_paper_wallet_is_valid(const dogecoin_paper_wallet* wallet);
 
-/* Sweep a paper wallet to a destination address */
+/*
+ * Sweep a paper wallet to a destination address.
+ * Requires dogecoin_ecc_start() before calling (same as other signing APIs).
+ * Options must include a destination and UTXO (dogecoin_sweep_options_set_utxo); this
+ * library does not query the chain for UTXOs.
+ */
 LIBDOGECOIN_API dogecoin_sweep_result* dogecoin_sweep_paper_wallet(
     const dogecoin_paper_wallet* wallet,
     const dogecoin_sweep_options* options
@@ -165,7 +180,7 @@ LIBDOGECOIN_API dogecoin_bool dogecoin_sweep_get_balance(
     uint64_t* balance_out
 );
 
-/* Create a sweep transaction without broadcasting */
+/* Create an unsigned sweep transaction (free with dogecoin_tx_free). Requires UTXO fields on options. */
 LIBDOGECOIN_API dogecoin_transaction* dogecoin_sweep_create_transaction(
     const dogecoin_paper_wallet* wallet,
     const dogecoin_sweep_options* options
@@ -227,6 +242,13 @@ LIBDOGECOIN_API void dogecoin_sweep_options_set_locktime(
     dogecoin_sweep_options* options,
     uint32_t locktime
 );
+
+/* Set the UTXO to spend when building a sweep (prevout txid hex, vout index, total input value as doge string). */
+LIBDOGECOIN_API dogecoin_bool dogecoin_sweep_options_set_utxo(
+    dogecoin_sweep_options* options,
+    const char* txid_hex,
+    int vout,
+    const char* total_input_doge);
 
 /* Get sweep result error message */
 LIBDOGECOIN_API const char* dogecoin_sweep_result_get_error(const dogecoin_sweep_result* result);

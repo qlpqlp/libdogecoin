@@ -31,6 +31,7 @@ noinst_HEADERS = \
     include/dogecoin/arith_uint256.h \
     include/dogecoin/auxpow.h \
     include/dogecoin/base58.h \
+    include/dogecoin/bip38.h \
     include/dogecoin/bip32.h \
     include/dogecoin/bip39.h \
     include/dogecoin/bip44.h \
@@ -60,6 +61,8 @@ noinst_HEADERS = \
     include/dogecoin/rmd160.h \
     include/dogecoin/script.h \
     include/dogecoin/scrypt.h \
+    include/dogecoin/scrypt_bip38.h \
+    include/dogecoin/sweep.h \
     include/dogecoin/sign.h \
     include/dogecoin/serialize.h \
     include/dogecoin/seal.h \
@@ -83,6 +86,7 @@ libdogecoin_la_SOURCES = \
     src/arith_uint256.c \
     src/auxpow.c \
     src/base58.c \
+    src/bip38.c \
     src/bip32.c \
     src/bip39.c \
     src/bip44.c \
@@ -108,8 +112,10 @@ libdogecoin_la_SOURCES = \
     src/rmd160.c \
     src/script.c \
     src/scrypt.c \
+    src/scrypt_bip38.c \
     src/seal.c \
     src/sign.c \
+    src/sweep.c \
     src/serialize.c \
     src/sha2.c \
     src/cli/tool.c \
@@ -207,6 +213,7 @@ tests_SOURCES = \
     test/rmd160_tests.c \
     test/scrypt_tests.c \
     test/serialize_tests.c \
+    test/sweep_tests.c \
     test/sha1_tests.c \
     test/sha2_tests.c \
     test/signmsg_tests.c \
