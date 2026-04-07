@@ -296,9 +296,11 @@ TARGET_SOURCES(${LIBDOGECOIN_NAME} PRIVATE
     src/sha2.c
     src/sign.c
     src/sweep.c
+    src/smpv.c
     src/cli/tool.c
     src/transaction.c
     src/tx.c
+    src/utf8proc.c
     src/utils.c
     src/validation.c
     src/vector.c
@@ -386,6 +388,7 @@ IF(USE_TESTS)
         test/sha1_tests.c
         test/sha2_tests.c
         test/signmsg_tests.c
+        test/smpv_tests.c
         test/tpm_tests.c
         test/transaction_tests.c
         test/tx_tests.c
