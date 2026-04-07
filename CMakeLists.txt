@@ -266,6 +266,7 @@ TARGET_SOURCES(${LIBDOGECOIN_NAME} PRIVATE
     src/auxpow.c
     src/base58.c
     src/bip32.c
+    src/bip38.c
     src/bip39.c
     src/bip44.c
     src/block.c
@@ -289,10 +290,12 @@ TARGET_SOURCES(${LIBDOGECOIN_NAME} PRIVATE
     src/rmd160.c
     src/script.c
     src/scrypt.c
+    src/scrypt_bip38.c
     src/seal.c
     src/serialize.c
     src/sha2.c
     src/sign.c
+    src/sweep.c
     src/cli/tool.c
     src/transaction.c
     src/tx.c
